@@ -46,31 +46,34 @@ export default function Login() {
     <div className="min-h-screen grid lg:grid-cols-2">
       {/* Panel de marca */}
       <div className="hidden lg:flex flex-col justify-between bg-ink p-12 relative overflow-hidden">
-        <div className="absolute -right-24 -top-24 h-96 w-96 rounded-full bg-brand/20 blur-3xl" />
-        <div className="absolute -left-24 bottom-0 h-80 w-80 rounded-full bg-money/10 blur-3xl" />
-        <div className="relative flex items-center gap-3">
-          {settings.logo_url
-            ? <img src={settings.logo_url} alt="" className="h-11 w-11 rounded-2xl object-cover" />
-            : <div className="h-11 w-11 rounded-2xl bg-brand grid place-items-center font-display font-extrabold text-white text-2xl">
-                {(settings.name || 'D').trim().charAt(0).toUpperCase()}
-              </div>}
+        <div className="anim-drift absolute -right-24 -top-24 h-96 w-96 rounded-full bg-brand/20 blur-3xl anim-glow" />
+        <div className="anim-drift-slow absolute -left-24 bottom-0 h-80 w-80 rounded-full bg-money/10 blur-3xl anim-glow delay-300" />
+        <div className="relative flex items-center gap-3 anim-fade-up">
+          <div className="relative anim-logo-pop">
+            <div className="absolute inset-0 rounded-2xl bg-brand blur-lg opacity-60 anim-glow" />
+            {settings.logo_url
+              ? <img src={settings.logo_url} alt="" className="relative h-11 w-11 rounded-2xl object-cover" />
+              : <div className="relative h-11 w-11 rounded-2xl bg-brand grid place-items-center font-display font-extrabold text-white text-2xl">
+                  {(settings.name || 'D').trim().charAt(0).toUpperCase()}
+                </div>}
+          </div>
           <span className="font-display font-bold text-white text-xl">{settings.name}</span>
         </div>
         <div className="relative">
-          <p className="eyebrow text-brand-light">Punto de venta</p>
-          <h1 className="font-display font-extrabold text-white text-4xl leading-tight mt-2">
+          <p className="eyebrow text-brand-light anim-fade-up delay-100">Punto de venta</p>
+          <h1 className="font-display font-extrabold text-white text-4xl leading-tight mt-2 anim-fade-up delay-200">
             Vende rápido.<br />Controla tu inventario.
           </h1>
-          <p className="text-slate-400 mt-4 max-w-sm">
+          <p className="text-slate-400 mt-4 max-w-sm anim-fade-up delay-300">
             Ventas, tallas y colores, corte de caja y reportes en un solo lugar.
           </p>
         </div>
-        <div className="relative text-slate-500 text-sm">Yañez Society · Sistema a la medida</div>
+        <div className="relative text-slate-500 text-sm anim-fade-in delay-500">Yañez Society · Sistema a la medida</div>
       </div>
 
       {/* Formulario */}
       <div className="flex items-center justify-center p-6 sm:p-12 bg-slate-100">
-        <form onSubmit={submit} className="card w-full max-w-sm p-8">
+        <form onSubmit={submit} className="card w-full max-w-sm p-8 anim-fade-up delay-200">
           <div className="lg:hidden flex items-center gap-2.5 mb-6">
             {settings.logo_url
               ? <img src={settings.logo_url} alt="" className="h-9 w-9 rounded-xl object-cover" />

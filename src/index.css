@@ -42,3 +42,44 @@
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { @apply bg-slate-300 rounded-full; }
 ::-webkit-scrollbar-thumb:hover { @apply bg-slate-400; }
+
+/* ---------------- Animaciones de la pantalla de login ---------------- */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes drift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(18px, -22px) scale(1.06); }
+}
+@keyframes glow-pulse {
+  0%, 100% { opacity: .55; }
+  50%      { opacity: 1; }
+}
+@keyframes logo-pop {
+  0%   { opacity: 0; transform: scale(.7) rotate(-6deg); }
+  60%  { opacity: 1; transform: scale(1.06) rotate(2deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0); }
+}
+
+.anim-fade-up  { animation: fade-up .7s cubic-bezier(.16,.8,.3,1) both; }
+.anim-fade-in  { animation: fade-in .9s ease-out both; }
+.anim-logo-pop { animation: logo-pop .8s cubic-bezier(.34,1.56,.64,1) both; }
+.anim-drift    { animation: drift 10s ease-in-out infinite; }
+.anim-drift-slow { animation: drift 14s ease-in-out infinite reverse; }
+.anim-glow     { animation: glow-pulse 4s ease-in-out infinite; }
+
+.delay-100 { animation-delay: .1s; }
+.delay-200 { animation-delay: .2s; }
+.delay-300 { animation-delay: .3s; }
+.delay-500 { animation-delay: .5s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-fade-up, .anim-fade-in, .anim-logo-pop, .anim-drift, .anim-drift-slow, .anim-glow {
+    animation: none !important;
+  }
+}
