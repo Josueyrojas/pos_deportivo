@@ -21,24 +21,28 @@ export default function CashRegister() {
 
   async function load() {
     setLoading(true)
-    const { data: open } = await supabase
-      .from('cash_sessions').select('*')
-      .eq('opened_by', profile.id).eq('status', 'open')
-      .order('opened_at', { ascending: false }).limit(1).maybeSingle()
+    // la sesión abierta y el historial no dependen entre sí: se piden en paralelo
+    const [{ data: open }, { data: hist }] = await Promise.all([
+      supabase
+        .from('cash_sessions').select('*')
+        .eq('opened_by', profile.id).eq('status', 'open')
+        .order('opened_at', { ascending: false }).limit(1).maybeSingle(),
+      supabase
+        .from('cash_sessions').select('*')
+        .eq('status', 'closed').order('closed_at', { ascending: false }).limit(10),
+    ])
     setSession(open ?? null)
+    setHistory(hist ?? [])
 
     if (open) {
       const { data: sales } = await supabase
-        .from('sales').select('payment_method,total').eq('session_id', open.id)
+        .from('sales').select('payment_method,total')
+        .eq('session_id', open.id).eq('status', 'completed')
       const acc = { efectivo: 0, tarjeta: 0, transferencia: 0, count: sales?.length || 0, total: 0 }
       for (const s of sales || []) { acc[s.payment_method] += Number(s.total); acc.total += Number(s.total) }
       setSummary(acc)
     } else setSummary(null)
 
-    const { data: hist } = await supabase
-      .from('cash_sessions').select('*')
-      .eq('status', 'closed').order('closed_at', { ascending: false }).limit(10)
-    setHistory(hist ?? [])
     setLoading(false)
   }
   useEffect(() => { load() }, [])   // eslint-disable-line

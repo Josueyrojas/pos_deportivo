@@ -1,4 +1,4 @@
-# POS Deportes Sarapaseo
+# POS Deportes Apaseo
 
 Punto de venta web para tienda deportiva, con inventario por **tallas y colores**,
 **multiusuario con roles** (admin / cajero), corte de caja y reportes.
@@ -18,6 +18,9 @@ en el backend.
    - Si ya lo habías corrido en una versión anterior (sin imágenes), corre en su
      lugar [`supabase/add-images.sql`](./supabase/add-images.sql) para agregar solo
      lo nuevo.
+   - Si ya tenías el proyecto funcionando y quieres las funciones nuevas
+     (cancelar/devolver ventas, utilidad en reportes, nombre y logo de la
+     tienda), corre [`supabase/update-v2.sql`](./supabase/update-v2.sql).
 3. (Recomendado para empezar rápido) En **Authentication → Providers → Email**,
    desactiva **"Confirm email"**. Así los usuarios que crees desde la app pueden
    entrar de inmediato sin confirmar correo.
@@ -71,6 +74,7 @@ El primer usuario no puede crearse desde la app (aún no hay ningún admin), as�
 | Inventario       |  ✅   |   —    |
 | Reportes         |  ✅   |   —    |
 | Usuarios         |  ✅   |   —    |
+| Configuración    |  ✅   |   —    |
 
 La separación no es solo visual: está reforzada en la base de datos con
 **Row Level Security**, así que un cajero no puede leer ni modificar lo que no le toca
@@ -84,6 +88,50 @@ aunque intente saltarse la interfaz.
    transferencia). El stock se descuenta solo, de forma atómica (sin sobreventa).
 3. **Cerrar corte**: cuentas el efectivo real y el sistema calcula la diferencia
    contra lo esperado (fondo + ventas en efectivo).
+4. **¿Un cliente se arrepiente o hubo un error?** En Ventas, abre el ticket y usa
+   **Cancelar / devolver venta**: regresa el stock automáticamente y deja de contar
+   en caja y reportes.
+
+## Marca de la tienda
+
+En **Configuración** (solo admin) puedes cambiar el nombre de la tienda y subir un
+logo; se usan en el login y en el menú lateral.
+
+## Crear usuarios de forma segura (Edge Function)
+
+Crear usuarios ya **no** usa el registro público de Supabase Auth (quedaría abierto
+a que cualquiera con la URL del proyecto se registre solo). Ahora corre en el
+servidor, en [`supabase/functions/create-user`](./supabase/functions/create-user),
+y solo funciona si quien llama ya es admin.
+
+Para desplegarla (una sola vez, o cada vez que la edites):
+
+```bash
+npx supabase login
+npx supabase link --project-ref yadvinimkenbmazfiich
+npx supabase functions deploy create-user
+```
+
+`npx supabase login` abre el navegador para autorizar el CLI con tu cuenta de
+Supabase. No hace falta configurar ninguna variable: `SUPABASE_URL` y
+`SUPABASE_SERVICE_ROLE_KEY` ya están disponibles automáticamente dentro de la función.
+
+Después, en Supabase ve a **Authentication → Providers → Email** y desactiva
+**"Allow new users to sign up"** (o el equivalente en tu versión del dashboard),
+para cerrar del todo el registro público — de ahora en adelante todas las
+cuentas se crean desde **Usuarios** en la app.
+
+## Recuperar contraseña
+
+El login tiene un enlace "¿Olvidaste tu contraseña?" que manda un correo con un
+enlace de recuperación. Para que el enlace redirija bien a la app, en Supabase ve a
+**Authentication → URL Configuration → Redirect URLs** y agrega:
+
+```
+http://localhost:5173/reset-password
+```
+
+y, cuando despliegues a producción, agrega también `https://tu-dominio.com/reset-password`.
 
 ## Desplegar en producción
 
@@ -92,18 +140,25 @@ Es un sitio estático; cualquiera de estos funciona:
 - **Vercel / Netlify / Cloudflare Pages**: conecta el repo, build `npm run build`,
   carpeta de salida `dist`, y agrega las dos variables `VITE_SUPABASE_URL` y
   `VITE_SUPABASE_ANON_KEY` en la configuración del proyecto.
-- Como es una SPA con React Router, activa el *fallback* a `index.html`
-  (Netlify: `/* /index.html 200`).
+- El *fallback* a `index.html` que necesita una SPA con React Router ya está
+  incluido: [`public/_redirects`](./public/_redirects) (Netlify/Cloudflare Pages)
+  y [`vercel.json`](./vercel.json) (Vercel).
+- En Supabase, agrega tu dominio de producción (ej. `https://tu-dominio.com/reset-password`)
+  en **Authentication → URL Configuration → Redirect URLs**, y pon el dominio en
+  **Site URL**.
 
 ## Qué quedó listo para extender
 
 - **Facturación (SAT/CFDI)**: no incluida por ahora; el modelo de ventas ya guarda
   todo lo necesario para conectarla después.
-- **Lector de código de barras**: la búsqueda ya está lista para recibirlo (un lector
-  USB "teclea" el código); solo faltaría capturar el SKU en el campo de búsqueda.
-- **Impresión de ticket**: hoy se muestra el resumen en pantalla; se puede conectar
-  a una impresora térmica.
+- **Lector de código de barras**: cada variante tiene un campo de SKU/código
+  (Inventario). Al escanear en el buscador del Punto de venta y dar "Enter", si
+  coincide exacto se agrega directo al carrito.
+- **Impresión de ticket**: el botón "Imprimir" del ticket abre una vista lista
+  para una impresora térmica de 80mm (usa el diálogo de impresión del navegador).
 
 ---
 
 Hecho por **Yañez Society**.
+
+DeportesApaseo!

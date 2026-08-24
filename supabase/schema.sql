@@ -83,11 +83,16 @@ create table if not exists public.sales (
   payment_method text not null check (payment_method in ('efectivo','tarjeta','transferencia')),
   cash_received  numeric(12,2),
   change         numeric(12,2),
+  status         text not null default 'completed' check (status in ('completed','cancelled')),
+  cancelled_at   timestamptz,
+  cancelled_by   uuid references public.profiles(id),
+  cancel_reason  text not null default '',
   created_at     timestamptz not null default now()
 );
 create index if not exists idx_sales_created on public.sales (created_at);
 create index if not exists idx_sales_session on public.sales (session_id);
 create index if not exists idx_sales_cashier on public.sales (cashier_id);
+create index if not exists idx_sales_status on public.sales (status);
 
 create table if not exists public.sale_items (
   id           uuid primary key default gen_random_uuid(),
@@ -97,10 +102,19 @@ create table if not exists public.sale_items (
   size         text,
   color        text,
   unit_price   numeric(12,2) not null,
+  unit_cost    numeric(12,2) not null default 0,
   qty          integer not null check (qty > 0),
   line_total   numeric(12,2) not null
 );
 create index if not exists idx_saleitems_sale on public.sale_items (sale_id);
+
+-- ------- Configuración de tienda (nombre + logo) ----------------------
+create table if not exists public.store_settings (
+  id         uuid primary key default '00000000-0000-0000-0000-000000000001',
+  name       text not null default 'Mi Tienda',
+  logo_url   text,
+  updated_at timestamptz not null default now()
+);
 
 -- =====================================================================
 --  Función helper: ¿el usuario actual es admin?  (evita recursión RLS)
@@ -194,7 +208,7 @@ begin
 
     -- Bloquear la variante para evitar sobreventa concurrente
     select pv.id, pv.stock, coalesce(pv.price, p.price) as price,
-           p.name as product_name, pv.size, pv.color
+           p.name as product_name, pv.size, pv.color, coalesce(p.cost, 0) as cost
       into v_variant
       from public.product_variants pv
       join public.products p on p.id = pv.product_id
@@ -212,10 +226,10 @@ begin
     v_price := v_variant.price;
 
     insert into public.sale_items
-      (sale_id, variant_id, product_name, size, color, unit_price, qty, line_total)
+      (sale_id, variant_id, product_name, size, color, unit_price, qty, line_total, unit_cost)
     values
       (v_sale_id, v_variant.id, v_variant.product_name, v_variant.size,
-       v_variant.color, v_price, v_qty, v_price * v_qty);
+       v_variant.color, v_price, v_qty, v_price * v_qty, v_variant.cost);
 
     update public.product_variants
        set stock = stock - v_qty
@@ -277,7 +291,7 @@ begin
 
   select coalesce(sum(total),0) into v_cash_sales
     from public.sales
-   where session_id = p_session_id and payment_method = 'efectivo';
+   where session_id = p_session_id and payment_method = 'efectivo' and status = 'completed';
 
   v_expected := v_session.opening_amount + v_cash_sales;
 
@@ -300,6 +314,58 @@ end;
 $$;
 
 -- =====================================================================
+--  Cancelar / devolver una venta: regresa el stock de cada renglón
+-- =====================================================================
+create or replace function public.cancel_sale(
+  p_sale_id uuid,
+  p_reason  text default ''
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid  uuid := auth.uid();
+  v_sale record;
+  v_item record;
+begin
+  if v_uid is null then
+    raise exception 'No autenticado';
+  end if;
+
+  select * into v_sale from public.sales where id = p_sale_id for update;
+  if not found then
+    raise exception 'Venta no encontrada';
+  end if;
+  if v_sale.status = 'cancelled' then
+    raise exception 'Esta venta ya estaba cancelada';
+  end if;
+  if v_sale.cashier_id <> v_uid and not is_admin() then
+    raise exception 'No puedes cancelar una venta que no es tuya';
+  end if;
+
+  for v_item in select variant_id, qty from public.sale_items where sale_id = p_sale_id
+  loop
+    if v_item.variant_id is not null then
+      update public.product_variants
+         set stock = stock + v_item.qty
+       where id = v_item.variant_id;
+    end if;
+  end loop;
+
+  update public.sales
+     set status = 'cancelled',
+         cancelled_at = now(),
+         cancelled_by = v_uid,
+         cancel_reason = coalesce(p_reason, '')
+   where id = p_sale_id;
+
+  return jsonb_build_object('sale_id', p_sale_id, 'status', 'cancelled');
+end;
+$$;
+
+-- =====================================================================
 --  Row Level Security
 -- =====================================================================
 alter table public.profiles         enable row level security;
@@ -309,6 +375,14 @@ alter table public.product_variants enable row level security;
 alter table public.cash_sessions    enable row level security;
 alter table public.sales            enable row level security;
 alter table public.sale_items       enable row level security;
+alter table public.store_settings   enable row level security;
+
+-- configuración de tienda: lectura pública (se usa hasta en el login, sin sesión)
+drop policy if exists "settings_read" on public.store_settings;
+create policy "settings_read" on public.store_settings for select using (true);
+drop policy if exists "settings_write" on public.store_settings;
+create policy "settings_write" on public.store_settings
+  for update using (public.is_admin()) with check (public.is_admin());
 
 -- profiles
 drop policy if exists "profiles_select" on public.profiles;
@@ -389,6 +463,36 @@ drop policy if exists "product_images_delete" on storage.objects;
 create policy "product_images_delete" on storage.objects
   for delete to authenticated
   using (bucket_id = 'product-images' and public.is_admin());
+
+-- =====================================================================
+--  Storage: bucket público para el logo de la tienda
+-- =====================================================================
+insert into storage.buckets (id, name, public)
+values ('store-assets', 'store-assets', true)
+on conflict (id) do nothing;
+
+drop policy if exists "store_assets_read" on storage.objects;
+create policy "store_assets_read" on storage.objects
+  for select using (bucket_id = 'store-assets');
+
+drop policy if exists "store_assets_insert" on storage.objects;
+create policy "store_assets_insert" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'store-assets' and public.is_admin());
+
+drop policy if exists "store_assets_update" on storage.objects;
+create policy "store_assets_update" on storage.objects
+  for update to authenticated
+  using (bucket_id = 'store-assets' and public.is_admin());
+
+drop policy if exists "store_assets_delete" on storage.objects;
+create policy "store_assets_delete" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'store-assets' and public.is_admin());
+
+insert into public.store_settings (id, name)
+values ('00000000-0000-0000-0000-000000000001', 'Deportes Apaseo')
+on conflict (id) do nothing;
 
 -- =====================================================================
 --  Datos de ejemplo (categorías + un par de productos con variantes)

@@ -1,15 +1,22 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useSettings } from '../context/SettingsContext'
+import { supabase } from '../lib/supabase'
 import { IconLock } from '../components/Icons'
 
 export default function Login() {
   const { signIn } = useAuth()
+  const settings = useSettings()
   const nav = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+
+  const [forgot, setForgot] = useState(false)
+  const [resetSent, setResetSent] = useState(false)
+  const [resetBusy, setResetBusy] = useState(false)
 
   async function submit(e) {
     e.preventDefault()
@@ -23,6 +30,18 @@ export default function Login() {
     nav('/venta')
   }
 
+  async function sendReset(e) {
+    e.preventDefault()
+    if (!email.trim()) { setErr('Escribe tu correo arriba primero.'); return }
+    setErr(''); setResetBusy(true)
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/reset-password`,
+    })
+    setResetBusy(false)
+    if (error) { setErr('No se pudo enviar el correo de recuperación.'); return }
+    setResetSent(true)
+  }
+
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
       {/* Panel de marca */}
@@ -30,8 +49,12 @@ export default function Login() {
         <div className="absolute -right-24 -top-24 h-96 w-96 rounded-full bg-brand/20 blur-3xl" />
         <div className="absolute -left-24 bottom-0 h-80 w-80 rounded-full bg-money/10 blur-3xl" />
         <div className="relative flex items-center gap-3">
-          <div className="h-11 w-11 rounded-2xl bg-brand grid place-items-center font-display font-extrabold text-white text-2xl">D</div>
-          <span className="font-display font-bold text-white text-xl">Deportes Sarapaseo</span>
+          {settings.logo_url
+            ? <img src={settings.logo_url} alt="" className="h-11 w-11 rounded-2xl object-cover" />
+            : <div className="h-11 w-11 rounded-2xl bg-brand grid place-items-center font-display font-extrabold text-white text-2xl">
+                {(settings.name || 'D').trim().charAt(0).toUpperCase()}
+              </div>}
+          <span className="font-display font-bold text-white text-xl">{settings.name}</span>
         </div>
         <div className="relative">
           <p className="eyebrow text-brand-light">Punto de venta</p>
@@ -49,28 +72,74 @@ export default function Login() {
       <div className="flex items-center justify-center p-6 sm:p-12 bg-slate-100">
         <form onSubmit={submit} className="card w-full max-w-sm p-8">
           <div className="lg:hidden flex items-center gap-2.5 mb-6">
-            <div className="h-9 w-9 rounded-xl bg-brand grid place-items-center font-display font-extrabold text-white">D</div>
-            <span className="font-display font-bold text-ink">Deportes Sarapaseo</span>
+            {settings.logo_url
+              ? <img src={settings.logo_url} alt="" className="h-9 w-9 rounded-xl object-cover" />
+              : <div className="h-9 w-9 rounded-xl bg-brand grid place-items-center font-display font-extrabold text-white">
+                  {(settings.name || 'D').trim().charAt(0).toUpperCase()}
+                </div>}
+            <span className="font-display font-bold text-ink">{settings.name}</span>
           </div>
 
-          <h2 className="text-2xl font-bold text-ink">Inicia sesión</h2>
-          <p className="text-sm text-slate-500 mt-1 mb-6">Entra con tu cuenta de la tienda.</p>
+          {forgot ? (
+            resetSent ? (
+              <>
+                <h2 className="text-2xl font-bold text-ink">Revisa tu correo</h2>
+                <p className="text-sm text-slate-500 mt-1 mb-6">
+                  Te enviamos un enlace a <b>{email}</b> para elegir una nueva contraseña.
+                </p>
+                <button type="button" className="btn-ghost w-full" onClick={() => { setForgot(false); setResetSent(false) }}>
+                  Volver a iniciar sesión
+                </button>
+              </>
+            ) : (
+              <>
+                <h2 className="text-2xl font-bold text-ink">Recuperar contraseña</h2>
+                <p className="text-sm text-slate-500 mt-1 mb-6">Escribe tu correo y te mandamos un enlace.</p>
 
-          <label className="label">Correo</label>
-          <input className="input mb-4" type="email" value={email} autoFocus
-            onChange={(e) => setEmail(e.target.value)} placeholder="tucorreo@ejemplo.com" required />
+                <label className="label">Correo</label>
+                <input className="input" type="email" value={email} autoFocus
+                  onChange={(e) => setEmail(e.target.value)} placeholder="tucorreo@ejemplo.com" required />
 
-          <label className="label">Contraseña</label>
-          <input className="input" type="password" value={password}
-            onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required />
+                {err && (
+                  <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mt-4">{err}</p>
+                )}
 
-          {err && (
-            <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mt-4">{err}</p>
+                <button type="button" onClick={sendReset} className="btn-brand w-full mt-6" disabled={resetBusy}>
+                  {resetBusy ? 'Enviando…' : 'Enviar enlace'}
+                </button>
+                <button type="button" className="btn-ghost w-full mt-2" onClick={() => { setForgot(false); setErr('') }}>
+                  Cancelar
+                </button>
+              </>
+            )
+          ) : (
+            <>
+              <h2 className="text-2xl font-bold text-ink">Inicia sesión</h2>
+              <p className="text-sm text-slate-500 mt-1 mb-6">Entra con tu cuenta de la tienda.</p>
+
+              <label className="label">Correo</label>
+              <input className="input mb-4" type="email" value={email} autoFocus
+                onChange={(e) => setEmail(e.target.value)} placeholder="tucorreo@ejemplo.com" required />
+
+              <div className="flex items-center justify-between">
+                <label className="label !mb-1.5">Contraseña</label>
+                <button type="button" onClick={() => { setForgot(true); setErr('') }}
+                  className="text-xs font-semibold text-brand hover:text-brand-dark mb-1.5">
+                  ¿Olvidaste tu contraseña?
+                </button>
+              </div>
+              <input className="input" type="password" value={password}
+                onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required />
+
+              {err && (
+                <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mt-4">{err}</p>
+              )}
+
+              <button className="btn-brand w-full mt-6" disabled={busy}>
+                <IconLock size={18} /> {busy ? 'Entrando…' : 'Entrar'}
+              </button>
+            </>
           )}
-
-          <button className="btn-brand w-full mt-6" disabled={busy}>
-            <IconLock size={18} /> {busy ? 'Entrando…' : 'Entrar'}
-          </button>
         </form>
       </div>
     </div>

@@ -1,22 +1,27 @@
 import { useState } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useSettings } from '../context/SettingsContext'
+import ErrorBoundary from './ErrorBoundary'
 import {
-  IconCart, IconBox, IconReceipt, IconCash, IconChart, IconUsers, IconLogout,
+  IconCart, IconBox, IconReceipt, IconCash, IconChart, IconUsers, IconLogout, IconSettings,
 } from './Icons'
 
 const NAV = [
-  { to: '/venta',     label: 'Punto de venta', icon: IconCart,    roles: ['admin', 'cajero'] },
-  { to: '/ventas',    label: 'Ventas',         icon: IconReceipt, roles: ['admin', 'cajero'] },
-  { to: '/corte',     label: 'Corte de caja',  icon: IconCash,    roles: ['admin', 'cajero'] },
-  { to: '/inventario',label: 'Inventario',     icon: IconBox,     roles: ['admin'] },
-  { to: '/reportes',  label: 'Reportes',       icon: IconChart,   roles: ['admin'] },
-  { to: '/usuarios',  label: 'Usuarios',       icon: IconUsers,   roles: ['admin'] },
+  { to: '/venta',       label: 'Punto de venta', icon: IconCart,     roles: ['admin', 'cajero'] },
+  { to: '/ventas',      label: 'Ventas',         icon: IconReceipt,  roles: ['admin', 'cajero'] },
+  { to: '/corte',       label: 'Corte de caja',  icon: IconCash,     roles: ['admin', 'cajero'] },
+  { to: '/inventario',  label: 'Inventario',     icon: IconBox,      roles: ['admin'] },
+  { to: '/reportes',    label: 'Reportes',       icon: IconChart,    roles: ['admin'] },
+  { to: '/usuarios',    label: 'Usuarios',       icon: IconUsers,    roles: ['admin'] },
+  { to: '/configuracion', label: 'Configuración', icon: IconSettings, roles: ['admin'] },
 ]
 
 export default function Layout() {
   const { profile, signOut } = useAuth()
+  const settings = useSettings()
   const nav = useNavigate()
+  const location = useLocation()
   const [open, setOpen] = useState(false)
   const role = profile?.role ?? 'cajero'
   const items = NAV.filter((i) => i.roles.includes(role))
@@ -30,9 +35,13 @@ export default function Layout() {
     <>
       <div className="px-5 py-6">
         <div className="flex items-center gap-2.5">
-          <div className="h-9 w-9 rounded-xl bg-brand grid place-items-center font-display font-extrabold text-white text-lg">D</div>
+          {settings.logo_url
+            ? <img src={settings.logo_url} alt="" className="h-9 w-9 rounded-xl object-cover" />
+            : <div className="h-9 w-9 rounded-xl bg-brand grid place-items-center font-display font-extrabold text-white text-lg">
+                {(settings.name || 'D').trim().charAt(0).toUpperCase()}
+              </div>}
           <div className="leading-tight">
-            <p className="font-display font-bold text-white tracking-tight">Deportes Sarapaseo</p>
+            <p className="font-display font-bold text-white tracking-tight">{settings.name}</p>
             <p className="text-[11px] text-slate-400 uppercase tracking-wider">Punto de venta</p>
           </div>
         </div>
@@ -96,11 +105,13 @@ export default function Layout() {
               <path d="M3 6h18M3 12h18M3 18h18" strokeLinecap="round" />
             </svg>
           </button>
-          <span className="font-display font-bold text-white">Deportes Sarapaseo</span>
+          <span className="font-display font-bold text-white">{settings.name}</span>
         </header>
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1400px] w-full mx-auto">
-          <Outlet />
+          <ErrorBoundary key={location.pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
     </div>

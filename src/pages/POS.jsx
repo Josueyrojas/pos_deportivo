@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { useSettings } from '../context/SettingsContext'
 import { useToast, Modal, Spinner, Empty } from '../components/UI'
-import { money, folio, variantLabel } from '../lib/format'
-import { IconSearch, IconCart, IconPlus, IconTrash, IconBox, IconCheck } from '../components/Icons'
+import { money, folio, variantLabel, dateTime } from '../lib/format'
+import { IconSearch, IconCart, IconPlus, IconTrash, IconBox, IconCheck, IconPrint } from '../components/Icons'
 
 export default function POS() {
   const { profile } = useAuth()
@@ -28,7 +29,7 @@ export default function POS() {
     setLoading(true)
     const { data, error } = await supabase
       .from('products')
-      .select('id,name,brand,price,image_url,active, category:categories(name), variants:product_variants(id,size,color,price,stock,min_stock,active)')
+      .select('id,name,brand,price,image_url,active, category:categories(name), variants:product_variants(id,size,color,sku,price,stock,min_stock,active)')
       .eq('active', true)
       .order('name')
     if (error) toast.err('No se pudo cargar el catálogo')
@@ -56,8 +57,22 @@ export default function POS() {
     if (!q) return products
     return products.filter((p) =>
       p.name.toLowerCase().includes(q) ||
-      (p.brand || '').toLowerCase().includes(q))
+      (p.brand || '').toLowerCase().includes(q) ||
+      (p.variants || []).some((v) => (v.sku || '').toLowerCase().includes(q)))
   }, [products, query])
+
+  /* ---------- lector de código de barras ----------
+     Un lector USB "teclea" el SKU y termina con Enter. Si coincide
+     exacto con una variante, se agrega directo al carrito. */
+  function onSearchKeyDown(e) {
+    if (e.key !== 'Enter') return
+    const code = query.trim().toLowerCase()
+    if (!code) return
+    for (const p of products) {
+      const v = (p.variants || []).find((v) => (v.sku || '').toLowerCase() === code)
+      if (v) { e.preventDefault(); addVariant(p, v); setQuery(''); return }
+    }
+  }
 
   const stockOf = (p) =>
     (p.variants || []).filter((v) => v.active).reduce((s, v) => s + v.stock, 0)
@@ -146,8 +161,8 @@ export default function POS() {
 
         <div className="relative mb-4">
           <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><IconSearch /></span>
-          <input className="input pl-11" placeholder="Buscar producto o marca…"
-            value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input className="input pl-11" placeholder="Buscar producto, marca o escanear código…"
+            value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onSearchKeyDown} autoFocus />
         </div>
 
         {loading ? <Spinner label="Cargando catálogo…" /> :
@@ -387,7 +402,48 @@ function PaymentModal({ open, onClose, total, cart, discount, sessionId, onDone 
 
 /* ============ Ticket ============ */
 function TicketModal({ ticket, onClose }) {
+  const settings = useSettings()
   if (!ticket) return null
+
+  function printTicket() {
+    const w = window.open('', '_blank', 'width=380,height=600')
+    if (!w) return
+    const rows = ticket.items.map((i) => `
+      <div class="row">
+        <span>${i.qty} × ${escapeHtml(i.name)}${i.size || i.color ? ` (${escapeHtml(variantLabel(i.size, i.color))})` : ''}</span>
+        <span>${money(i.price * i.qty)}</span>
+      </div>`).join('')
+    w.document.write(`
+      <html><head><title>${folio(ticket.folio)}</title>
+      <style>
+        body { font-family: 'Courier New', monospace; font-size: 12px; width: 78mm; margin: 0 auto; padding: 10px; color: #111; }
+        h1 { font-size: 15px; text-align: center; margin: 0 0 2px; }
+        .center { text-align: center; }
+        .muted { color: #555; font-size: 11px; }
+        hr { border: none; border-top: 1px dashed #999; margin: 8px 0; }
+        .row { display: flex; justify-content: space-between; gap: 8px; margin: 2px 0; }
+        .total { font-weight: bold; font-size: 14px; }
+      </style></head>
+      <body>
+        <h1>${escapeHtml(settings.name || 'Tienda')}</h1>
+        <p class="center muted">${folio(ticket.folio)} · ${dateTime(new Date())}</p>
+        <hr />
+        ${rows}
+        <hr />
+        <div class="row"><span>Subtotal</span><span>${money(ticket.subtotal)}</span></div>
+        ${ticket.discount > 0 ? `<div class="row"><span>Descuento</span><span>− ${money(ticket.discount)}</span></div>` : ''}
+        <div class="row total"><span>Total</span><span>${money(ticket.total)}</span></div>
+        <div class="row muted"><span>Pago</span><span>${ticket.method}</span></div>
+        ${ticket.method === 'efectivo' && ticket.change > 0 ? `<div class="row muted"><span>Cambio</span><span>${money(ticket.change)}</span></div>` : ''}
+        <hr />
+        <p class="center muted">¡Gracias por su compra!</p>
+      </body></html>
+    `)
+    w.document.close()
+    w.focus()
+    w.print()
+  }
+
   return (
     <Modal open={!!ticket} onClose={onClose} title="Venta registrada">
       <div className="text-center py-2">
@@ -401,7 +457,18 @@ function TicketModal({ ticket, onClose }) {
           <p className="text-money-dark font-semibold mt-2">Cambio: {money(ticket.change)}</p>
         )}
       </div>
-      <button className="btn-brand w-full mt-4" onClick={onClose}>Nueva venta</button>
+      <div className="flex gap-2 mt-4">
+        <button className="btn-ghost flex-1" onClick={printTicket}>
+          <IconPrint size={16} /> Imprimir
+        </button>
+        <button className="btn-brand flex-1" onClick={onClose}>Nueva venta</button>
+      </div>
     </Modal>
   )
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]))
 }

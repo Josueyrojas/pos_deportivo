@@ -1,16 +1,8 @@
 import { useEffect, useState } from 'react'
-import { createClient } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useToast, Modal, Spinner } from '../components/UI'
 import { IconPlus, IconUsers } from '../components/Icons'
-
-// Cliente secundario: crea usuarios sin tocar la sesión del administrador
-const signupClient = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY,
-  { auth: { persistSession: false, autoRefreshToken: false } }
-)
 
 export default function Users() {
   const { profile: me, refreshProfile } = useAuth()
@@ -47,20 +39,16 @@ export default function Users() {
       toast.err('Correo válido y contraseña de 6+ caracteres'); return
     }
     setBusy(true)
-    const { data, error } = await signupClient.auth.signUp({
-      email: form.email.trim(),
-      password: form.password,
-      options: { data: { full_name: form.full_name.trim() } },
+    const { data, error } = await supabase.functions.invoke('create-user', {
+      body: {
+        email: form.email.trim(),
+        password: form.password,
+        full_name: form.full_name.trim(),
+        role: form.role,
+      },
     })
-    if (error) { toast.err(error.message); setBusy(false); return }
-
-    // el trigger crea el perfil como 'cajero'; ajustamos nombre y rol
-    const uid = data.user?.id
-    if (uid) {
-      await supabase.from('profiles')
-        .update({ full_name: form.full_name.trim(), role: form.role }).eq('id', uid)
-    }
     setBusy(false)
+    if (error || data?.error) { toast.err(data?.error || error.message || 'No se pudo crear el usuario'); return }
     setModal(false)
     setForm({ full_name: '', email: '', password: '', role: 'cajero' })
     toast.ok('Usuario creado')
@@ -148,8 +136,8 @@ export default function Users() {
           {busy ? 'Creando…' : 'Crear usuario'}
         </button>
         <p className="text-xs text-slate-400 mt-3">
-          Si en tu proyecto está activada la confirmación por correo, el usuario deberá
-          confirmar antes de iniciar sesión.
+          La cuenta queda lista para entrar de inmediato con el correo y la contraseña
+          que pongas aquí.
         </p>
       </Modal>
     </div>

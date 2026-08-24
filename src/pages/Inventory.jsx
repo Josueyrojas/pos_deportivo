@@ -4,7 +4,7 @@ import { useToast, Modal, Spinner, Empty } from '../components/UI'
 import { money, variantLabel } from '../lib/format'
 import { IconSearch, IconPlus, IconEdit, IconTrash, IconBox, IconWarn } from '../components/Icons'
 
-const emptyVariant = () => ({ _k: crypto.randomUUID(), size: '', color: '', price: '', stock: 0, min_stock: 0 })
+const emptyVariant = () => ({ _k: crypto.randomUUID(), size: '', color: '', sku: '', price: '', stock: 0, min_stock: 0 })
 
 export default function Inventory() {
   const toast = useToast()
@@ -19,7 +19,7 @@ export default function Inventory() {
     setLoading(true)
     const [{ data: prods }, { data: cats }] = await Promise.all([
       supabase.from('products')
-        .select('id,name,brand,price,cost,image_url,active,category_id, category:categories(name), variants:product_variants(id,size,color,price,stock,min_stock,active)')
+        .select('id,name,brand,price,cost,image_url,active,category_id, category:categories(name), variants:product_variants(id,size,color,sku,price,stock,min_stock,active)')
         .order('name'),
       supabase.from('categories').select('*').order('name'),
     ])
@@ -162,7 +162,7 @@ function ProductEditor({ product, categories, onClose, onSaved }) {
       (product.variants && product.variants.length
         ? product.variants.map((v) => ({
             _k: v.id, id: v.id,
-            size: v.size || '', color: v.color || '',
+            size: v.size || '', color: v.color || '', sku: v.sku || '',
             price: v.price ?? '', stock: v.stock, min_stock: v.min_stock,
           }))
         : [emptyVariant()])
@@ -231,6 +231,7 @@ function ProductEditor({ product, categories, onClose, onSaved }) {
       product_id: productId,
       size: v.size.trim() || null,
       color: v.color.trim() || null,
+      sku: v.sku.trim() || null,
       price: v.price === '' ? null : Number(v.price),
       stock: Number(v.stock) || 0,
       min_stock: Number(v.min_stock) || 0,
@@ -308,13 +309,14 @@ function ProductEditor({ product, categories, onClose, onSaved }) {
         </p>
 
         <div className="space-y-2">
-          <div className="hidden sm:grid grid-cols-[1fr_1fr_1fr_1fr_1fr_auto] gap-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-            <span>Talla</span><span>Color</span><span>Precio*</span><span>Stock</span><span>Mín.</span><span></span>
+          <div className="hidden sm:grid grid-cols-[1fr_1fr_1.2fr_1fr_1fr_1fr_auto] gap-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            <span>Talla</span><span>Color</span><span>SKU / código</span><span>Precio*</span><span>Stock</span><span>Mín.</span><span></span>
           </div>
           {variants.map((v) => (
-            <div key={v._k} className="grid grid-cols-2 sm:grid-cols-[1fr_1fr_1fr_1fr_1fr_auto] gap-2">
+            <div key={v._k} className="grid grid-cols-2 sm:grid-cols-[1fr_1fr_1.2fr_1fr_1fr_1fr_auto] gap-2">
               <input className="input !py-2" value={v.size} onChange={(e) => setV(v._k, 'size', e.target.value)} placeholder="Talla" />
               <input className="input !py-2" value={v.color} onChange={(e) => setV(v._k, 'color', e.target.value)} placeholder="Color" />
+              <input className="input !py-2" value={v.sku} onChange={(e) => setV(v._k, 'sku', e.target.value)} placeholder="Escanea o escribe" />
               <input className="input !py-2 tnum" type="number" value={v.price} onChange={(e) => setV(v._k, 'price', e.target.value)} placeholder="Base" />
               <input className="input !py-2 tnum" type="number" value={v.stock} onChange={(e) => setV(v._k, 'stock', e.target.value)} placeholder="0" />
               <input className="input !py-2 tnum" type="number" value={v.min_stock} onChange={(e) => setV(v._k, 'min_stock', e.target.value)} placeholder="0" />
