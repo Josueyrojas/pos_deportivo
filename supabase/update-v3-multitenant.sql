@@ -1,17 +1,16 @@
 -- =====================================================================
---  POS multi-negocio — Esquema de base de datos (Supabase / Postgres)
---  Ejecuta este archivo completo en:  Supabase > SQL Editor > New query
+--  Migración v3 — multi-negocio (multi-tenant)
+--  Corre esto en Supabase > SQL Editor. Haz un respaldo antes: toca
+--  `sales` y reescribe todas las políticas RLS en producción.
 --
---  Un solo despliegue sirve a varios negocios independientes. Cada uno
---  tiene su propio catálogo, ventas, caja y usuarios — aislados por
---  Row Level Security. Un "super admin" (sin negocio propio) da de alta
---  negocios nuevos con su primer usuario admin.
+--  Después de correrla:
+--   1) Redespliega las Edge Functions: create-user y delete-user
+--      (npx supabase functions deploy create-user / delete-user)
+--   2) Entra con josueyrojas@gmail.com — ya queda como super admin — y
+--      dale un dueño a Deportes Apaseo desde /negocios.
 -- =====================================================================
 
--- ------- Extensiones -------------------------------------------------
-create extension if not exists "pgcrypto";
-
--- ------- Negocios (tenants) -------------------------------------------
+-- ------- 1) Tabla de negocios ------------------------------------------
 create table if not exists public.businesses (
   id         uuid primary key default gen_random_uuid(),
   name       text not null default 'Mi Negocio',
@@ -20,131 +19,74 @@ create table if not exists public.businesses (
   created_at timestamptz not null default now()
 );
 
--- notas internas del super admin sobre cada negocio (privadas: el dueño
--- del negocio nunca las ve, ni siquiera con select('*') sobre businesses)
-create table if not exists public.business_notes (
-  business_id uuid primary key references public.businesses(id) on delete cascade,
-  notes       text not null default '',
-  updated_at  timestamptz not null default now()
-);
+-- ------- 2) business_id en cada tabla (nullable primero, se llena después) ---
+alter table public.profiles         add column if not exists business_id uuid references public.businesses(id);
+alter table public.categories       add column if not exists business_id uuid references public.businesses(id);
+alter table public.products         add column if not exists business_id uuid references public.businesses(id);
+alter table public.product_variants add column if not exists business_id uuid references public.businesses(id);
+alter table public.cash_sessions    add column if not exists business_id uuid references public.businesses(id);
+alter table public.sales            add column if not exists business_id uuid references public.businesses(id);
+alter table public.sale_items       add column if not exists business_id uuid references public.businesses(id);
 
--- ------- Perfiles de usuario (extiende auth.users) -------------------
--- business_id es NULL solo para role = 'super_admin' (no pertenece a
--- ningún negocio, administra la plataforma completa).
-create table if not exists public.profiles (
-  id          uuid primary key references auth.users(id) on delete cascade,
-  business_id uuid references public.businesses(id),
-  full_name   text not null default '',
-  role        text not null default 'cajero' check (role in ('super_admin','admin','cajero')),
-  active      boolean not null default true,
-  created_at  timestamptz not null default now()
-);
-create index if not exists idx_profiles_business on public.profiles (business_id);
+-- ------- 3) Migrar los datos existentes al primer negocio (Deportes Apaseo) --
+do $$
+declare
+  v_biz_id uuid;
+begin
+  select id into v_biz_id from public.businesses limit 1;
 
--- ------- Catálogo ----------------------------------------------------
-create table if not exists public.categories (
-  id          uuid primary key default gen_random_uuid(),
-  business_id uuid not null references public.businesses(id),
-  name        text not null,
-  created_at  timestamptz not null default now()
-);
+  if v_biz_id is null then
+    insert into public.businesses (name, logo_url)
+    select coalesce(name, 'Deportes Apaseo'), logo_url
+      from public.store_settings where id = '00000000-0000-0000-0000-000000000001'
+    returning id into v_biz_id;
+  end if;
+
+  if v_biz_id is null then
+    insert into public.businesses (name) values ('Deportes Apaseo') returning id into v_biz_id;
+  end if;
+
+  update public.categories       set business_id = v_biz_id where business_id is null;
+  update public.products         set business_id = v_biz_id where business_id is null;
+  update public.product_variants set business_id = v_biz_id where business_id is null;
+  update public.cash_sessions    set business_id = v_biz_id where business_id is null;
+  update public.sales            set business_id = v_biz_id where business_id is null;
+  update public.sale_items       set business_id = v_biz_id where business_id is null;
+  -- perfiles existentes (admin/cajero) también quedan en este negocio;
+  -- luego, más abajo, se saca a josueyrojas@gmail.com y se vuelve super_admin.
+  update public.profiles         set business_id = v_biz_id where business_id is null;
+end $$;
+
+-- ------- 4) Ya con todo migrado, business_id es obligatorio ------------
+alter table public.categories       alter column business_id set not null;
+alter table public.products         alter column business_id set not null;
+alter table public.product_variants alter column business_id set not null;
+alter table public.cash_sessions    alter column business_id set not null;
+alter table public.sales            alter column business_id set not null;
+alter table public.sale_items       alter column business_id set not null;
+-- profiles.business_id se queda nullable (null = super_admin)
+
+-- el nombre de categoría era único globalmente; ahora debe serlo solo
+-- dentro de cada negocio (dos negocios distintos sí pueden tener "Calzado")
+alter table public.categories drop constraint if exists categories_name_key;
 create unique index if not exists uq_category_business_name on public.categories (business_id, name);
 
-create table if not exists public.products (
-  id          uuid primary key default gen_random_uuid(),
-  business_id uuid not null references public.businesses(id),
-  name        text not null,
-  brand       text default '',
-  category_id uuid references public.categories(id) on delete set null,
-  sku         text,
-  cost        numeric(12,2) not null default 0,
-  price       numeric(12,2) not null default 0,   -- precio base de venta
-  image_url   text,
-  active      boolean not null default true,
-  created_at  timestamptz not null default now()
-);
+create index if not exists idx_categories_business on public.categories (business_id);
 create index if not exists idx_products_business on public.products (business_id);
-create index if not exists idx_products_name on public.products (lower(name));
-
--- Cada producto tiene 1..n variantes (talla/color). Un producto sin
--- variantes se guarda con una sola fila de talla/color en NULL.
-create table if not exists public.product_variants (
-  id            uuid primary key default gen_random_uuid(),
-  business_id   uuid not null references public.businesses(id),
-  product_id    uuid not null references public.products(id) on delete cascade,
-  size          text,
-  color         text,
-  sku           text,
-  price         numeric(12,2),        -- si es NULL, usa products.price
-  stock         integer not null default 0,
-  min_stock     integer not null default 0,
-  active        boolean not null default true,
-  created_at    timestamptz not null default now()
-);
 create index if not exists idx_variants_business on public.product_variants (business_id);
-create index if not exists idx_variants_product on public.product_variants (product_id);
--- No repetir la misma combinación talla/color dentro de un producto
-create unique index if not exists uq_variant_combo
-  on public.product_variants (product_id, coalesce(size,''), coalesce(color,''));
-
--- ------- Sesiones de caja (corte) -----------------------------------
-create table if not exists public.cash_sessions (
-  id              uuid primary key default gen_random_uuid(),
-  business_id     uuid not null references public.businesses(id),
-  opened_by       uuid not null references public.profiles(id),
-  opened_at       timestamptz not null default now(),
-  opening_amount  numeric(12,2) not null default 0,
-  closed_at       timestamptz,
-  counted_amount  numeric(12,2),
-  expected_amount numeric(12,2),
-  difference      numeric(12,2),
-  status          text not null default 'open' check (status in ('open','closed')),
-  notes           text default ''
-);
 create index if not exists idx_sessions_business on public.cash_sessions (business_id);
-create index if not exists idx_sessions_openedby on public.cash_sessions (opened_by);
-create index if not exists idx_sessions_status on public.cash_sessions (status);
-
--- ------- Ventas ------------------------------------------------------
-create table if not exists public.sales (
-  id             uuid primary key default gen_random_uuid(),
-  business_id    uuid not null references public.businesses(id),
-  folio          bigint generated always as identity,
-  session_id     uuid references public.cash_sessions(id) on delete set null,
-  cashier_id     uuid not null references public.profiles(id),
-  subtotal       numeric(12,2) not null default 0,
-  discount       numeric(12,2) not null default 0,
-  total          numeric(12,2) not null default 0,
-  payment_method text not null check (payment_method in ('efectivo','tarjeta','transferencia')),
-  cash_received  numeric(12,2),
-  change         numeric(12,2),
-  status         text not null default 'completed' check (status in ('completed','cancelled')),
-  cancelled_at   timestamptz,
-  cancelled_by   uuid references public.profiles(id),
-  cancel_reason  text not null default '',
-  created_at     timestamptz not null default now()
-);
 create index if not exists idx_sales_business on public.sales (business_id);
-create index if not exists idx_sales_created on public.sales (created_at);
-create index if not exists idx_sales_session on public.sales (session_id);
-create index if not exists idx_sales_cashier on public.sales (cashier_id);
-create index if not exists idx_sales_status on public.sales (status);
-
-create table if not exists public.sale_items (
-  id           uuid primary key default gen_random_uuid(),
-  business_id  uuid not null references public.businesses(id),
-  sale_id      uuid not null references public.sales(id) on delete cascade,
-  variant_id   uuid references public.product_variants(id) on delete set null,
-  product_name text not null,
-  size         text,
-  color        text,
-  unit_price   numeric(12,2) not null,
-  unit_cost    numeric(12,2) not null default 0,
-  qty          integer not null check (qty > 0),
-  line_total   numeric(12,2) not null
-);
 create index if not exists idx_saleitems_business on public.sale_items (business_id);
-create index if not exists idx_saleitems_sale on public.sale_items (sale_id);
+create index if not exists idx_profiles_business on public.profiles (business_id);
+
+-- ------- 5) Rol nuevo: super_admin --------------------------------------
+alter table public.profiles drop constraint if exists profiles_role_check;
+alter table public.profiles add constraint profiles_role_check
+  check (role in ('super_admin','admin','cajero'));
+
+-- ------- 6) Promover a Josué a super admin (sin negocio propio) --------
+update public.profiles set role = 'super_admin', business_id = null
+where id = (select id from auth.users where email = 'josueyrojas@gmail.com');
 
 -- =====================================================================
 --  Helpers de RLS
@@ -177,8 +119,7 @@ as $$
   );
 $$;
 
--- admin de MI propio negocio (usado donde no hay una fila de la que
--- tomar el business_id, ej. políticas de profiles)
+-- se conserva is_admin() (admin de MI propio negocio) por compatibilidad
 create or replace function public.is_admin()
 returns boolean
 language sql security definer set search_path = public stable
@@ -189,18 +130,17 @@ as $$
   );
 $$;
 
--- El business_id de lo que crea un usuario desde el cliente (categorías,
--- productos, variantes, apertura de caja) se rellena solo con el negocio
--- de quien hace el insert — así el frontend nunca necesita mandarlo.
+-- El business_id de lo que se crea desde el cliente (categorías, productos,
+-- variantes, apertura de caja) se rellena solo con el negocio de quien hace
+-- el insert — así el frontend nunca necesita mandarlo.
 alter table public.categories       alter column business_id set default public.my_business_id();
 alter table public.products         alter column business_id set default public.my_business_id();
 alter table public.product_variants alter column business_id set default public.my_business_id();
 alter table public.cash_sessions    alter column business_id set default public.my_business_id();
 
 -- =====================================================================
---  Alta automática de perfil al crear un usuario (Edge Function)
---  role y business_id vienen en user_metadata (admin.createUser), así el
---  perfil nace ya correcto — nunca se crea sin negocio salvo super_admin.
+--  Alta de usuario: el perfil nace ya con role/business_id correctos
+--  (antes: se creaba como 'cajero' y un update posterior lo corregía)
 -- =====================================================================
 create or replace function public.handle_new_user()
 returns trigger
@@ -219,19 +159,12 @@ begin
 end;
 $$;
 
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
-  after insert on auth.users
-  for each row execute function public.handle_new_user();
-
 -- =====================================================================
---  Venta atómica: valida stock, registra venta y descuenta inventario.
---  Se ejecuta como definer para que el cajero venda sin permiso directo
---  de escritura sobre el inventario. business_id siempre sale del perfil
---  de quien llama, nunca del cliente.
+--  process_sale / close_cash_session / cancel_sale: ahora fijan/usan
+--  business_id (siempre el del usuario que llama, nunca del cliente)
 -- =====================================================================
 create or replace function public.process_sale(
-  p_items          jsonb,          -- [{ "variant_id": "...", "qty": 2 }, ...]
+  p_items          jsonb,
   p_payment_method text,
   p_discount       numeric default 0,
   p_cash_received  numeric default null,
@@ -267,12 +200,10 @@ begin
     raise exception 'Método de pago inválido';
   end if;
 
-  -- Crear encabezado de venta (subtotal/total se actualizan al final)
   insert into public.sales (session_id, cashier_id, payment_method, business_id)
   values (p_session_id, v_uid, p_payment_method, v_biz_id)
   returning id, folio into v_sale_id, v_folio;
 
-  -- Procesar cada renglón
   for v_item in select * from jsonb_array_elements(p_items)
   loop
     v_qty := (v_item->>'qty')::int;
@@ -280,8 +211,6 @@ begin
       raise exception 'Cantidad inválida';
     end if;
 
-    -- Bloquear la variante para evitar sobreventa concurrente
-    -- (y de paso confirmar que es del mismo negocio que quien vende)
     select pv.id, pv.stock, coalesce(pv.price, p.price) as price,
            p.name as product_name, pv.size, pv.color, coalesce(p.cost, 0) as cost
       into v_variant
@@ -339,9 +268,6 @@ begin
 end;
 $$;
 
--- =====================================================================
---  Cerrar corte de caja: calcula esperado vs contado
--- =====================================================================
 create or replace function public.close_cash_session(
   p_session_id     uuid,
   p_counted_amount numeric,
@@ -387,9 +313,6 @@ begin
 end;
 $$;
 
--- =====================================================================
---  Cancelar / devolver una venta: regresa el stock de cada renglón
--- =====================================================================
 create or replace function public.cancel_sale(
   p_sale_id uuid,
   p_reason  text default ''
@@ -438,36 +361,26 @@ end;
 $$;
 
 -- =====================================================================
---  Row Level Security
+--  RLS: businesses
 -- =====================================================================
-alter table public.businesses        enable row level security;
-alter table public.business_notes    enable row level security;
-alter table public.profiles          enable row level security;
-alter table public.categories        enable row level security;
-alter table public.products          enable row level security;
-alter table public.product_variants  enable row level security;
-alter table public.cash_sessions     enable row level security;
-alter table public.sales             enable row level security;
-alter table public.sale_items        enable row level security;
+alter table public.businesses enable row level security;
 
--- negocios: cada quien ve/edita el suyo; solo super admin ve/crea todos
 drop policy if exists "businesses_select" on public.businesses;
 create policy "businesses_select" on public.businesses
   for select using (id = public.my_business_id() or public.is_super_admin());
+
 drop policy if exists "businesses_admin_update" on public.businesses;
 create policy "businesses_admin_update" on public.businesses
   for update using (public.is_business_admin(id) or public.is_super_admin())
   with check (public.is_business_admin(id) or public.is_super_admin());
+
 drop policy if exists "businesses_super_insert" on public.businesses;
 create policy "businesses_super_insert" on public.businesses
   for insert with check (public.is_super_admin());
 
--- notas internas: exclusivas del super admin
-drop policy if exists "business_notes_super_only" on public.business_notes;
-create policy "business_notes_super_only" on public.business_notes
-  for all using (public.is_super_admin()) with check (public.is_super_admin());
-
--- profiles
+-- =====================================================================
+--  RLS: profiles (ahora con business_id)
+-- =====================================================================
 drop policy if exists "profiles_select" on public.profiles;
 create policy "profiles_select" on public.profiles
   for select using (
@@ -483,7 +396,9 @@ drop policy if exists "profiles_admin_insert" on public.profiles;
 create policy "profiles_admin_insert" on public.profiles
   for insert with check (public.is_business_admin(business_id) or public.is_super_admin());
 
--- categorías / productos / variantes: lectura y escritura dentro del propio negocio
+-- =====================================================================
+--  RLS: catálogo (categorías / productos / variantes)
+-- =====================================================================
 drop policy if exists "cat_read" on public.categories;
 create policy "cat_read" on public.categories
   for select using (business_id = public.my_business_id() or public.is_super_admin());
@@ -508,7 +423,9 @@ create policy "var_write" on public.product_variants
   for all using (public.is_business_admin(business_id) or public.is_super_admin())
   with check (public.is_business_admin(business_id) or public.is_super_admin());
 
--- cajas
+-- =====================================================================
+--  RLS: cajas / ventas
+-- =====================================================================
 drop policy if exists "sessions_select" on public.cash_sessions;
 create policy "sessions_select" on public.cash_sessions
   for select using (
@@ -525,7 +442,6 @@ create policy "sessions_update" on public.cash_sessions
   using (opened_by = auth.uid() or public.is_business_admin(business_id) or public.is_super_admin())
   with check (opened_by = auth.uid() or public.is_business_admin(business_id) or public.is_super_admin());
 
--- ventas
 drop policy if exists "sales_select" on public.sales;
 create policy "sales_select" on public.sales
   for select using (
@@ -546,66 +462,6 @@ create policy "saleitems_select" on public.sale_items
   );
 
 -- =====================================================================
---  Storage: bucket público para imágenes de producto
--- =====================================================================
-insert into storage.buckets (id, name, public)
-values ('product-images', 'product-images', true)
-on conflict (id) do nothing;
-
-drop policy if exists "product_images_read" on storage.objects;
-create policy "product_images_read" on storage.objects
-  for select using (bucket_id = 'product-images');
-
-drop policy if exists "product_images_insert" on storage.objects;
-create policy "product_images_insert" on storage.objects
-  for insert to authenticated
-  with check (bucket_id = 'product-images' and (public.is_admin() or public.is_super_admin()));
-
-drop policy if exists "product_images_update" on storage.objects;
-create policy "product_images_update" on storage.objects
-  for update to authenticated
-  using (bucket_id = 'product-images' and (public.is_admin() or public.is_super_admin()));
-
-drop policy if exists "product_images_delete" on storage.objects;
-create policy "product_images_delete" on storage.objects
-  for delete to authenticated
-  using (bucket_id = 'product-images' and (public.is_admin() or public.is_super_admin()));
-
--- =====================================================================
---  Storage: bucket público para el logo de cada negocio
--- =====================================================================
-insert into storage.buckets (id, name, public)
-values ('store-assets', 'store-assets', true)
-on conflict (id) do nothing;
-
-drop policy if exists "store_assets_read" on storage.objects;
-create policy "store_assets_read" on storage.objects
-  for select using (bucket_id = 'store-assets');
-
-drop policy if exists "store_assets_insert" on storage.objects;
-create policy "store_assets_insert" on storage.objects
-  for insert to authenticated
-  with check (bucket_id = 'store-assets' and (public.is_admin() or public.is_super_admin()));
-
-drop policy if exists "store_assets_update" on storage.objects;
-create policy "store_assets_update" on storage.objects
-  for update to authenticated
-  using (bucket_id = 'store-assets' and (public.is_admin() or public.is_super_admin()));
-
-drop policy if exists "store_assets_delete" on storage.objects;
-create policy "store_assets_delete" on storage.objects
-  for delete to authenticated
-  using (bucket_id = 'store-assets' and (public.is_admin() or public.is_super_admin()));
-
--- =====================================================================
---  IMPORTANTE — primer super admin
---  1) Regístrate/crea tu primer usuario desde Supabase
---     (Authentication > Users > Add user).
---  2) Vuélvelo super admin (sin negocio propio):
---
---     update public.profiles set role = 'super_admin', business_id = null
---     where id = (select id from auth.users where email = 'TU_CORREO');
---
---  3) Entra a la app con ese correo — caerás directo en /negocios — y
---     desde ahí da de alta el primer negocio con su dueño.
+--  Fin. store_settings queda sin usarse (el frontend ya no la lee) —
+--  se deja la tabla por si se quiere revisar el dato viejo, sin RLS nueva.
 -- =====================================================================

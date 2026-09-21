@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { useSettings } from '../context/SettingsContext'
+import { useAuth } from '../context/AuthContext'
+import { useBusiness } from '../context/BusinessContext'
 import { useToast } from '../components/UI'
 import { IconImage, IconSettings } from '../components/Icons'
 
-const SETTINGS_ID = '00000000-0000-0000-0000-000000000001'
-
 export default function Settings() {
-  const settings = useSettings()
+  const { profile } = useAuth()
+  const business = useBusiness()
   const toast = useToast()
   const [name, setName] = useState('')
   const [logoUrl, setLogoUrl] = useState('')
@@ -15,11 +15,11 @@ export default function Settings() {
   const [imgBusy, setImgBusy] = useState(false)
 
   useEffect(() => {
-    if (!settings.loading) {
-      setName(settings.name || '')
-      setLogoUrl(settings.logo_url || '')
+    if (!business.loading) {
+      setName(business.name || '')
+      setLogoUrl(business.logo_url || '')
     }
-  }, [settings.loading, settings.name, settings.logo_url])
+  }, [business.loading, business.name, business.logo_url])
 
   async function uploadLogo(e) {
     const file = e.target.files?.[0]
@@ -39,37 +39,37 @@ export default function Settings() {
   async function save() {
     if (!name.trim()) { toast.err('Ponle un nombre a la tienda'); return }
     setBusy(true)
-    const { error } = await supabase.from('store_settings')
-      .update({ name: name.trim(), logo_url: logoUrl || null, updated_at: new Date().toISOString() })
-      .eq('id', SETTINGS_ID)
+    const { error } = await supabase.from('businesses')
+      .update({ name: name.trim(), logo_url: logoUrl || null })
+      .eq('id', profile.business_id)
     setBusy(false)
     if (error) { toast.err('No se pudo guardar'); return }
     toast.ok('Configuración guardada')
-    settings.refresh()
+    business.refresh()
   }
 
   return (
     <div>
       <div className="mb-5">
-        <p className="eyebrow">Tienda</p>
+        <p className="eyebrow">Negocio</p>
         <h1 className="text-2xl font-bold text-ink">Configuración</h1>
       </div>
 
       <div className="card p-6 max-w-lg">
         <div className="flex items-center gap-2 mb-5">
           <IconSettings size={18} className="text-brand" />
-          <h2 className="font-bold text-ink">Marca de la tienda</h2>
+          <h2 className="font-bold text-ink">Marca del negocio</h2>
         </div>
 
-        <label className="label">Nombre de la tienda</label>
+        <label className="label">Nombre del negocio</label>
         <input className="input mb-5" value={name} onChange={(e) => setName(e.target.value)}
           placeholder="Ej. Deportes Apaseo" />
 
         <label className="label">Logo</label>
         <div className="flex items-center gap-4">
-          <div className="h-16 w-16 shrink-0 rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden grid place-items-center text-slate-300">
+          <div className="h-16 min-w-16 max-w-[220px] shrink-0 rounded-2xl border border-slate-200 bg-slate-50 grid place-items-center text-slate-300 px-2">
             {logoUrl
-              ? <img src={logoUrl} alt="" className="h-full w-full object-cover" />
+              ? <img src={logoUrl} alt="" className="h-full max-h-12 w-full object-contain" />
               : <IconImage size={26} />}
           </div>
           <div>

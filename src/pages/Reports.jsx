@@ -12,7 +12,7 @@ const todayISO = () => new Date().toISOString().slice(0, 10)
 
 export default function Reports() {
   const [loading, setLoading] = useState(true)
-  const [kpi, setKpi] = useState({ today: 0, todayCount: 0, week: 0, month: 0, profitMonth: 0 })
+  const [kpi, setKpi] = useState({ today: 0, todayCount: 0, week: 0, month: 0, profitMonth: 0, inventoryValue: 0 })
   const [byDay, setByDay] = useState([])
   const [top, setTop] = useState([])
   const [low, setLow] = useState([])
@@ -44,12 +44,14 @@ export default function Reports() {
         .order('created_at'),
       supabase
         .from('product_variants')
-        .select('id,size,color,stock,min_stock, product:products(name)')
+        .select('id,size,color,stock,min_stock, product:products(name,cost)')
         .eq('active', true),
     ])
-    const lows = (vars ?? []).filter((v) => v.stock <= v.min_stock)
+    const activeVars = vars ?? []
+    const lows = activeVars.filter((v) => v.stock <= v.min_stock)
       .sort((a, b) => a.stock - b.stock).slice(0, 12)
     setLow(lows)
+    const inventoryValue = activeVars.reduce((s, v) => s + v.stock * Number(v.product?.cost || 0), 0)
 
     const all = sales ?? []
     const sum = (arr) => arr.reduce((s, r) => s + Number(r.total), 0)
@@ -83,6 +85,7 @@ export default function Reports() {
       week: sum(all.filter((s) => new Date(s.created_at) >= start7)),
       month: sum(monthSales),
       profitMonth: sum(monthSales) - costSum(monthSales),
+      inventoryValue,
     })
 
     const dayCount = Math.max(1, Math.round((rangeEnd - rangeStart) / 86400000) + 1)
@@ -141,6 +144,7 @@ export default function Reports() {
         <Kpi label="Últimos 7 días" value={money(kpi.week)} />
         <Kpi label="Este mes" value={money(kpi.month)} />
         <Kpi label="Utilidad del mes" value={money(kpi.profitMonth)} sub="ventas − costo" />
+        <Kpi label="Valor de inventario" value={money(kpi.inventoryValue)} sub="stock × costo" />
         <Kpi label="Alertas de stock" value={low.length} sub="variantes bajas" warn={low.length > 0} />
       </div>
 

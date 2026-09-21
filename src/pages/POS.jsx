@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { useSettings } from '../context/SettingsContext'
+import { useBusiness } from '../context/BusinessContext'
 import { useToast, Modal, Spinner, Empty } from '../components/UI'
 import { money, folio, variantLabel, dateTime } from '../lib/format'
 import { IconSearch, IconCart, IconPlus, IconTrash, IconBox, IconCheck, IconPrint } from '../components/Icons'
@@ -402,7 +402,7 @@ function PaymentModal({ open, onClose, total, cart, discount, sessionId, onDone 
 
 /* ============ Ticket ============ */
 function TicketModal({ ticket, onClose }) {
-  const settings = useSettings()
+  const business = useBusiness()
   if (!ticket) return null
 
   function printTicket() {
@@ -425,7 +425,7 @@ function TicketModal({ ticket, onClose }) {
         .total { font-weight: bold; font-size: 14px; }
       </style></head>
       <body>
-        <h1>${escapeHtml(settings.name || 'Tienda')}</h1>
+        <h1>${escapeHtml(business.name || 'Tienda')}</h1>
         <p class="center muted">${folio(ticket.folio)} · ${dateTime(new Date())}</p>
         <hr />
         ${rows}

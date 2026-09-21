@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { useSettings } from '../context/SettingsContext'
 import { IconLock } from '../components/Icons'
+import BrandLogo from '../components/BrandLogo'
+
+const APP_NAME = 'Sistema de Punto de Venta'
 
 export default function ResetPassword() {
-  const settings = useSettings()
   const nav = useNavigate()
   const [ready, setReady] = useState(false)
   const [password, setPassword] = useState('')
@@ -40,12 +41,8 @@ export default function ResetPassword() {
     <div className="min-h-screen grid place-items-center bg-slate-100 p-6">
       <form onSubmit={submit} className="card w-full max-w-sm p-8">
         <div className="flex items-center gap-2.5 mb-6">
-          {settings.logo_url
-            ? <img src={settings.logo_url} alt="" className="h-9 w-9 rounded-xl object-cover" />
-            : <div className="h-9 w-9 rounded-xl bg-brand grid place-items-center font-display font-extrabold text-white">
-                {(settings.name || 'D').trim().charAt(0).toUpperCase()}
-              </div>}
-          <span className="font-display font-bold text-ink">{settings.name}</span>
+          <BrandLogo name={APP_NAME} size={36} />
+          <span className="font-display font-bold text-ink">{APP_NAME}</span>
         </div>
 
         <h2 className="text-2xl font-bold text-ink">Nueva contraseña</h2>

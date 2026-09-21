@@ -3,7 +3,8 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useToast, Modal, Spinner, Empty } from '../components/UI'
 import { money, folio, dateTime, variantLabel } from '../lib/format'
-import { IconReceipt, IconUndo } from '../components/Icons'
+import { downloadCsv } from '../lib/csv'
+import { IconReceipt, IconUndo, IconDownload } from '../components/Icons'
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
 
@@ -66,6 +67,19 @@ export default function Sales() {
   const canCancel = (sale) =>
     sale && sale.status !== 'cancelled' && (isAdmin || sale.cashier_id === profile?.id)
 
+  function exportCsv() {
+    downloadCsv(
+      `ventas_${from}_a_${to}.csv`,
+      ['Folio', 'Fecha', ...(isAdmin ? ['Cajero'] : []), 'Pago', 'Estado', 'Total'],
+      rows.map((s) => [
+        folio(s.folio), dateTime(s.created_at),
+        ...(isAdmin ? [names[s.cashier_id] || ''] : []),
+        s.payment_method, s.status === 'cancelled' ? 'Cancelada' : 'Completada',
+        Number(s.total).toFixed(2),
+      ])
+    )
+  }
+
   const methodPill = (m) => ({
     efectivo: 'bg-money/10 text-money-dark',
     tarjeta: 'bg-blue-50 text-blue-600',
@@ -88,6 +102,9 @@ export default function Sales() {
             <label className="label">Hasta</label>
             <input className="input !py-2" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
           </div>
+          <button className="btn-ghost !py-2.5" onClick={exportCsv} disabled={rows.length === 0}>
+            <IconDownload size={16} /> CSV
+          </button>
         </div>
       </div>
 

@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { useSettings } from '../context/SettingsContext'
 import { supabase } from '../lib/supabase'
 import { IconLock } from '../components/Icons'
+import BrandLogo from '../components/BrandLogo'
+
+const APP_NAME = 'Sistema de Punto de Venta'
 
 export default function Login() {
   const { signIn } = useAuth()
-  const settings = useSettings()
   const nav = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -51,16 +52,12 @@ export default function Login() {
         <div className="relative flex items-center gap-3 anim-fade-up">
           <div className="relative anim-logo-pop">
             <div className="absolute inset-0 rounded-2xl bg-brand blur-lg opacity-60 anim-glow" />
-            {settings.logo_url
-              ? <img src={settings.logo_url} alt="" className="relative h-11 w-11 rounded-2xl object-cover" />
-              : <div className="relative h-11 w-11 rounded-2xl bg-brand grid place-items-center font-display font-extrabold text-white text-2xl">
-                  {(settings.name || 'D').trim().charAt(0).toUpperCase()}
-                </div>}
+            <BrandLogo name={APP_NAME} size={44} className="relative" />
           </div>
-          <span className="font-display font-bold text-white text-xl">{settings.name}</span>
+          <span className="font-display font-bold text-white text-xl">{APP_NAME}</span>
         </div>
         <div className="relative">
-          <p className="eyebrow text-brand-light anim-fade-up delay-100">Punto de venta</p>
+          <p className="eyebrow text-brand-light anim-fade-up delay-100">Multi-negocio</p>
           <h1 className="font-display font-extrabold text-white text-4xl leading-tight mt-2 anim-fade-up delay-200">
             Vende rápido.<br />Controla tu inventario.
           </h1>
@@ -75,12 +72,8 @@ export default function Login() {
       <div className="flex items-center justify-center p-6 sm:p-12 bg-slate-100">
         <form onSubmit={submit} className="card w-full max-w-sm p-8 anim-fade-up delay-200">
           <div className="lg:hidden flex items-center gap-2.5 mb-6">
-            {settings.logo_url
-              ? <img src={settings.logo_url} alt="" className="h-9 w-9 rounded-xl object-cover" />
-              : <div className="h-9 w-9 rounded-xl bg-brand grid place-items-center font-display font-extrabold text-white">
-                  {(settings.name || 'D').trim().charAt(0).toUpperCase()}
-                </div>}
-            <span className="font-display font-bold text-ink">{settings.name}</span>
+            <BrandLogo name={APP_NAME} size={36} />
+            <span className="font-display font-bold text-ink">{APP_NAME}</span>
           </div>
 
           {forgot ? (
@@ -118,7 +111,7 @@ export default function Login() {
           ) : (
             <>
               <h2 className="text-2xl font-bold text-ink">Inicia sesión</h2>
-              <p className="text-sm text-slate-500 mt-1 mb-6">Entra con tu cuenta de la tienda.</p>
+              <p className="text-sm text-slate-500 mt-1 mb-6">Entra con tu cuenta.</p>
 
               <label className="label">Correo</label>
               <input className="input mb-4" type="email" value={email} autoFocus

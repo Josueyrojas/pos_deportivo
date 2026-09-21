@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
-import { SettingsProvider } from './context/SettingsContext'
+import { BusinessProvider } from './context/BusinessContext'
 import { ToastProvider } from './components/UI'
 import ProtectedRoute from './components/ProtectedRoute'
 import ErrorBoundary from './components/ErrorBoundary'
@@ -14,12 +14,14 @@ import Inventory from './pages/Inventory'
 import Reports from './pages/Reports'
 import Users from './pages/Users'
 import Settings from './pages/Settings'
+import Negocios from './pages/Negocios'
+import NegocioDetalle from './pages/NegocioDetalle'
 
 export default function App() {
   return (
     <ErrorBoundary>
-    <SettingsProvider>
-      <AuthProvider>
+    <AuthProvider>
+      <BusinessProvider>
         <ToastProvider>
           <BrowserRouter>
             <Routes>
@@ -33,13 +35,15 @@ export default function App() {
                 <Route path="/reportes" element={<ProtectedRoute adminOnly><Reports /></ProtectedRoute>} />
                 <Route path="/usuarios" element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />
                 <Route path="/configuracion" element={<ProtectedRoute adminOnly><Settings /></ProtectedRoute>} />
+                <Route path="/negocios" element={<ProtectedRoute superAdminOnly><Negocios /></ProtectedRoute>} />
+                <Route path="/negocios/:id" element={<ProtectedRoute superAdminOnly><NegocioDetalle /></ProtectedRoute>} />
               </Route>
               <Route path="*" element={<Navigate to="/venta" replace />} />
             </Routes>
           </BrowserRouter>
         </ToastProvider>
-      </AuthProvider>
-    </SettingsProvider>
+      </BusinessProvider>
+    </AuthProvider>
     </ErrorBoundary>
   )
 }

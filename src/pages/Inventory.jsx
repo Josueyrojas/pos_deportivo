@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast, Modal, Spinner, Empty } from '../components/UI'
 import { money, variantLabel } from '../lib/format'
-import { IconSearch, IconPlus, IconEdit, IconTrash, IconBox, IconWarn } from '../components/Icons'
+import { downloadCsv } from '../lib/csv'
+import { IconSearch, IconPlus, IconEdit, IconTrash, IconBox, IconWarn, IconDownload } from '../components/Icons'
 
 const emptyVariant = () => ({ _k: crypto.randomUUID(), size: '', color: '', sku: '', price: '', stock: 0, min_stock: 0 })
 
@@ -46,6 +47,23 @@ export default function Inventory() {
     setConfirmDel(null); load()
   }
 
+  function exportCsv() {
+    const lines = []
+    for (const p of filtered) {
+      for (const v of (p.variants || [])) {
+        lines.push([
+          p.name, p.brand || '', p.category?.name || '', v.sku || '',
+          v.size || '', v.color || '',
+          Number(v.price ?? p.price).toFixed(2),
+          v.stock, v.min_stock,
+        ])
+      }
+    }
+    downloadCsv('inventario.csv',
+      ['Producto', 'Marca', 'Categoría', 'SKU', 'Talla', 'Color', 'Precio', 'Stock', 'Mínimo'],
+      lines)
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
@@ -53,9 +71,14 @@ export default function Inventory() {
           <p className="eyebrow">Catálogo</p>
           <h1 className="text-2xl font-bold text-ink">Inventario</h1>
         </div>
-        <button className="btn-brand" onClick={() => setEditing({ variants: [emptyVariant()] })}>
-          <IconPlus /> Nuevo producto
-        </button>
+        <div className="flex items-center gap-2">
+          <button className="btn-ghost" onClick={exportCsv} disabled={filtered.length === 0}>
+            <IconDownload size={16} /> CSV
+          </button>
+          <button className="btn-brand" onClick={() => setEditing({ variants: [emptyVariant()] })}>
+            <IconPlus /> Nuevo producto
+          </button>
+        </div>
       </div>
 
       <div className="relative mb-4 max-w-md">

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useToast, Modal, Spinner } from '../components/UI'
-import { IconPlus, IconUsers } from '../components/Icons'
+import { IconPlus, IconUsers, IconTrash } from '../components/Icons'
 
 export default function Users() {
   const { profile: me, refreshProfile } = useAuth()
@@ -10,8 +10,10 @@ export default function Users() {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(false)
-  const [form, setForm] = useState({ full_name: '', email: '', password: '', role: 'cajero' })
+  const [form, setForm] = useState({ full_name: '', email: '', password: '', role: 'cajero', invite: false })
   const [busy, setBusy] = useState(false)
+  const [confirmDel, setConfirmDel] = useState(null)
+  const [delBusy, setDelBusy] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -35,23 +37,38 @@ export default function Users() {
   }
 
   async function createUser() {
-    if (!form.email.trim() || form.password.length < 6) {
-      toast.err('Correo válido y contraseña de 6+ caracteres'); return
+    if (!form.email.trim()) { toast.err('Escribe un correo válido'); return }
+    if (!form.invite && form.password.length < 6) {
+      toast.err('La contraseña debe tener 6+ caracteres'); return
     }
     setBusy(true)
     const { data, error } = await supabase.functions.invoke('create-user', {
       body: {
         email: form.email.trim(),
-        password: form.password,
+        password: form.invite ? undefined : form.password,
         full_name: form.full_name.trim(),
         role: form.role,
+        invite: form.invite,
+        redirectTo: `${window.location.origin}/reset-password`,
       },
     })
     setBusy(false)
     if (error || data?.error) { toast.err(data?.error || error.message || 'No se pudo crear el usuario'); return }
     setModal(false)
-    setForm({ full_name: '', email: '', password: '', role: 'cajero' })
-    toast.ok('Usuario creado')
+    setForm({ full_name: '', email: '', password: '', role: 'cajero', invite: false })
+    toast.ok(form.invite ? 'Invitación enviada' : 'Usuario creado')
+    load()
+  }
+
+  async function deleteUser(u) {
+    setDelBusy(true)
+    const { data, error } = await supabase.functions.invoke('delete-user', {
+      body: { user_id: u.id },
+    })
+    setDelBusy(false)
+    if (error || data?.error) { toast.err(data?.error || error.message || 'No se pudo eliminar'); return }
+    setConfirmDel(null)
+    toast.ok('Usuario eliminado')
     load()
   }
 
@@ -76,6 +93,7 @@ export default function Users() {
               <th className="px-4 py-3 font-semibold">Nombre</th>
               <th className="px-4 py-3 font-semibold">Rol</th>
               <th className="px-4 py-3 font-semibold text-center">Estado</th>
+              <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
@@ -109,6 +127,14 @@ export default function Users() {
                       {u.active ? 'Activo' : 'Inactivo'}
                     </button>
                   </td>
+                  <td className="px-4 py-3 text-right">
+                    {!self && (
+                      <button onClick={() => setConfirmDel(u)}
+                        className="p-2 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500" title="Eliminar">
+                        <IconTrash size={16} />
+                      </button>
+                    )}
+                  </td>
                 </tr>
               )
             })}
@@ -123,9 +149,21 @@ export default function Users() {
         <label className="label">Correo</label>
         <input className="input mb-3" type="email" value={form.email}
           onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="correo@ejemplo.com" />
-        <label className="label">Contraseña temporal</label>
-        <input className="input mb-3" type="text" value={form.password}
-          onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Mínimo 6 caracteres" />
+
+        <label className="flex items-center gap-2 mb-3 cursor-pointer select-none">
+          <input type="checkbox" className="h-4 w-4 accent-brand" checked={form.invite}
+            onChange={(e) => setForm({ ...form, invite: e.target.checked })} />
+          <span className="text-sm text-slate-600">Invitar por correo en vez de ponerle contraseña</span>
+        </label>
+
+        {!form.invite && (
+          <>
+            <label className="label">Contraseña temporal</label>
+            <input className="input mb-3" type="text" value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Mínimo 6 caracteres" />
+          </>
+        )}
+
         <label className="label">Rol</label>
         <select className="input" value={form.role}
           onChange={(e) => setForm({ ...form, role: e.target.value })}>
@@ -133,12 +171,30 @@ export default function Users() {
           <option value="admin">Admin</option>
         </select>
         <button className="btn-brand w-full mt-5" onClick={createUser} disabled={busy}>
-          {busy ? 'Creando…' : 'Crear usuario'}
+          {busy ? 'Guardando…' : (form.invite ? 'Enviar invitación' : 'Crear usuario')}
         </button>
         <p className="text-xs text-slate-400 mt-3">
-          La cuenta queda lista para entrar de inmediato con el correo y la contraseña
-          que pongas aquí.
+          {form.invite
+            ? 'Le llega un correo para que elija su propia contraseña.'
+            : 'La cuenta queda lista para entrar de inmediato con el correo y la contraseña que pongas aquí.'}
         </p>
+      </Modal>
+
+      <Modal open={!!confirmDel} onClose={() => setConfirmDel(null)} title="Eliminar usuario">
+        <p className="text-sm text-slate-600">
+          ¿Seguro que quieres eliminar a <b>{confirmDel?.full_name || 'este usuario'}</b>?
+          No podrá volver a iniciar sesión.
+        </p>
+        <p className="text-xs text-slate-400 mt-2">
+          Si ya tiene ventas o cortes de caja registrados, no se podrá eliminar —
+          en ese caso, desactívalo en vez de borrarlo.
+        </p>
+        <div className="flex gap-2 mt-6">
+          <button className="btn-ghost flex-1" onClick={() => setConfirmDel(null)}>Cancelar</button>
+          <button className="btn-danger flex-1" onClick={() => deleteUser(confirmDel)} disabled={delBusy}>
+            {delBusy ? 'Eliminando…' : 'Eliminar'}
+          </button>
+        </div>
       </Modal>
     </div>
   )

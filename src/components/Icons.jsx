@@ -25,3 +25,5 @@ export const IconSettings= (p) => <S {...p}><circle cx="12" cy="12" r="3"/><path
 export const IconPrint   = (p) => <S {...p}><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="2"/><path d="M6 17v4h12v-4"/></S>
 export const IconUndo    = (p) => <S {...p}><path d="M3 7v6h6"/><path d="M3 13a9 9 0 1 0 3-6.7L3 9"/></S>
 export const IconImage   = (p) => <S {...p}><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></S>
+export const IconBriefcase = (p) => <S {...p}><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><path d="M2 13h20"/></S>
+export const IconDownload = (p) => <S {...p}><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 19h16"/></S>
