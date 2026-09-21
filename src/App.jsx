@@ -16,6 +16,7 @@ import Users from './pages/Users'
 import Settings from './pages/Settings'
 import Negocios from './pages/Negocios'
 import NegocioDetalle from './pages/NegocioDetalle'
+import Privacidad from './pages/Privacidad'
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/privacidad" element={<Privacidad />} />
               <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
                 <Route path="/venta" element={<POS />} />
                 <Route path="/ventas" element={<Sales />} />

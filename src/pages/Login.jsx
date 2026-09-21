@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { IconLock } from '../components/Icons'
@@ -65,7 +65,10 @@ export default function Login() {
             Ventas, tallas y colores, corte de caja y reportes en un solo lugar.
           </p>
         </div>
-        <div className="relative text-slate-500 text-sm anim-fade-in delay-500">Yañez Society · Sistema a la medida</div>
+        <div className="relative text-slate-500 text-sm anim-fade-in delay-500">
+          Yañez Society · Sistema a la medida ·{' '}
+          <Link to="/privacidad" className="underline hover:text-slate-300">Aviso de privacidad</Link>
+        </div>
       </div>
 
       {/* Formulario */}
@@ -138,6 +141,10 @@ export default function Login() {
           )}
         </form>
       </div>
+      <Link to="/privacidad"
+        className="lg:hidden fixed bottom-3 inset-x-0 text-center text-xs text-slate-400 underline">
+        Aviso de privacidad
+      </Link>
     </div>
   )
 }
