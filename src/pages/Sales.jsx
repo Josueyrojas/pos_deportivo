@@ -70,11 +70,13 @@ export default function Sales() {
   function exportCsv() {
     downloadCsv(
       `ventas_${from}_a_${to}.csv`,
-      ['Folio', 'Fecha', ...(isAdmin ? ['Cajero'] : []), 'Pago', 'Estado', 'Total'],
+      ['Folio', 'Fecha', ...(isAdmin ? ['Cajero'] : []), 'Pago', 'Estado', 'Subtotal', 'IVA', 'Total'],
       rows.map((s) => [
         folio(s.folio), dateTime(s.created_at),
         ...(isAdmin ? [names[s.cashier_id] || ''] : []),
         s.payment_method, s.status === 'cancelled' ? 'Cancelada' : 'Completada',
+        Number(s.subtotal - s.discount).toFixed(2),
+        Number(s.tax).toFixed(2),
         Number(s.total).toFixed(2),
       ])
     )
@@ -195,6 +197,7 @@ export default function Sales() {
               {detail.sale.discount > 0 && (
                 <div className="flex justify-between text-slate-500"><span>Descuento</span><span className="tnum">− {money(detail.sale.discount)}</span></div>
               )}
+              <div className="flex justify-between text-slate-500"><span>IVA (16%)</span><span className="tnum">{money(detail.sale.tax)}</span></div>
               <div className="flex justify-between font-bold text-ink text-base pt-1"><span>Total</span><span className="tnum">{money(detail.sale.total)}</span></div>
               {detail.sale.payment_method === 'efectivo' && detail.sale.cash_received != null && (
                 <>

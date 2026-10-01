@@ -114,6 +114,7 @@ create table if not exists public.sales (
   cashier_id     uuid not null references public.profiles(id),
   subtotal       numeric(12,2) not null default 0,
   discount       numeric(12,2) not null default 0,
+  tax            numeric(12,2) not null default 0,
   total          numeric(12,2) not null default 0,
   payment_method text not null check (payment_method in ('efectivo','tarjeta','transferencia')),
   cash_received  numeric(12,2),
@@ -241,11 +242,14 @@ returns jsonb
 language plpgsql security definer set search_path = public
 as $$
 declare
+  v_tax_rate   constant numeric := 0.16;  -- IVA fijo para todos los negocios
   v_uid        uuid := auth.uid();
   v_biz_id     uuid;
   v_sale_id    uuid;
   v_folio      bigint;
   v_subtotal   numeric(12,2) := 0;
+  v_taxable    numeric(12,2) := 0;
+  v_tax        numeric(12,2) := 0;
   v_total      numeric(12,2) := 0;
   v_change     numeric(12,2);
   v_item       jsonb;
@@ -314,7 +318,9 @@ begin
     v_subtotal := v_subtotal + (v_price * v_qty);
   end loop;
 
-  v_total := greatest(v_subtotal - coalesce(p_discount,0), 0);
+  v_taxable := greatest(v_subtotal - coalesce(p_discount,0), 0);
+  v_tax     := round(v_taxable * v_tax_rate, 2);
+  v_total   := v_taxable + v_tax;
 
   if p_payment_method = 'efectivo' and p_cash_received is not null then
     v_change := greatest(p_cash_received - v_total, 0);
@@ -323,6 +329,7 @@ begin
   update public.sales
      set subtotal = v_subtotal,
          discount = coalesce(p_discount,0),
+         tax      = v_tax,
          total    = v_total,
          cash_received = p_cash_received,
          change   = v_change
@@ -333,6 +340,7 @@ begin
     'folio',   v_folio,
     'subtotal',v_subtotal,
     'discount',coalesce(p_discount,0),
+    'tax',     v_tax,
     'total',   v_total,
     'change',  v_change
   );

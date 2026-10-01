@@ -6,6 +6,8 @@ import { useToast, Modal, Spinner, Empty } from '../components/UI'
 import { money, folio, variantLabel, dateTime } from '../lib/format'
 import { IconSearch, IconCart, IconPlus, IconTrash, IconBox, IconCheck, IconPrint } from '../components/Icons'
 
+const IVA_RATE = 0.16   // fijo para todos los negocios; el cálculo real lo hace process_sale en el servidor
+
 export default function POS() {
   const { profile } = useAuth()
   const toast = useToast()
@@ -118,7 +120,9 @@ export default function POS() {
 
   const subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0)
   const disc = Math.min(Number(discount) || 0, subtotal)
-  const total = subtotal - disc
+  const taxable = subtotal - disc
+  const tax = Math.round(taxable * IVA_RATE * 100) / 100
+  const total = taxable + tax
 
   /* ---------- abrir caja ---------- */
   async function openSession() {
@@ -243,6 +247,9 @@ export default function POS() {
                   value={discount} onChange={(e) => setDiscount(e.target.value)} placeholder="0" />
               </div>
             </div>
+            <div className="flex justify-between text-sm text-slate-500">
+              <span>IVA (16%)</span><span className="tnum">{money(tax)}</span>
+            </div>
             <div className="flex justify-between items-baseline pt-2 border-t border-slate-200">
               <span className="font-bold text-ink">Total</span>
               <span className="font-display font-extrabold text-2xl text-ink tnum">{money(total)}</span>
@@ -277,7 +284,7 @@ export default function POS() {
       {/* -------- Modal de pago -------- */}
       <PaymentModal
         open={payModal} onClose={() => setPayModal(false)}
-        total={total} cart={cart} discount={disc} sessionId={session?.id}
+        total={total} subtotal={subtotal} tax={tax} cart={cart} discount={disc} sessionId={session?.id}
         onDone={(res) => {
           setPayModal(false)
           setTicket(res)
@@ -322,7 +329,7 @@ function VariantPicker({ product, onClose, onPick }) {
 }
 
 /* ============ Modal de pago ============ */
-function PaymentModal({ open, onClose, total, cart, discount, sessionId, onDone }) {
+function PaymentModal({ open, onClose, total, subtotal, tax, cart, discount, sessionId, onDone }) {
   const toast = useToast()
   const [method, setMethod] = useState('efectivo')
   const [received, setReceived] = useState('')
@@ -357,7 +364,20 @@ function PaymentModal({ open, onClose, total, cart, discount, sessionId, onDone 
 
   return (
     <Modal open={open} onClose={onClose} title="Cobrar venta">
-      <div className="flex justify-between items-baseline mb-5">
+      <div className="space-y-1 mb-4 text-sm">
+        <div className="flex justify-between text-slate-500">
+          <span>Subtotal</span><span className="tnum">{money(subtotal)}</span>
+        </div>
+        {discount > 0 && (
+          <div className="flex justify-between text-slate-500">
+            <span>Descuento</span><span className="tnum">− {money(discount)}</span>
+          </div>
+        )}
+        <div className="flex justify-between text-slate-500">
+          <span>IVA (16%)</span><span className="tnum">{money(tax)}</span>
+        </div>
+      </div>
+      <div className="flex justify-between items-baseline mb-5 pt-3 border-t border-slate-100">
         <span className="text-slate-500">Total a pagar</span>
         <span className="font-display font-extrabold text-3xl text-ink tnum">{money(total)}</span>
       </div>
@@ -432,6 +452,7 @@ function TicketModal({ ticket, onClose }) {
         <hr />
         <div class="row"><span>Subtotal</span><span>${money(ticket.subtotal)}</span></div>
         ${ticket.discount > 0 ? `<div class="row"><span>Descuento</span><span>− ${money(ticket.discount)}</span></div>` : ''}
+        <div class="row"><span>IVA (16%)</span><span>${money(ticket.tax)}</span></div>
         <div class="row total"><span>Total</span><span>${money(ticket.total)}</span></div>
         <div class="row muted"><span>Pago</span><span>${ticket.method}</span></div>
         ${ticket.method === 'efectivo' && ticket.change > 0 ? `<div class="row muted"><span>Cambio</span><span>${money(ticket.change)}</span></div>` : ''}

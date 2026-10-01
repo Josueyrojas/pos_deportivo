@@ -37,7 +37,7 @@ export default function Reports() {
     // ventas y stock bajo no dependen entre sí: se piden en paralelo
     const [{ data: sales }, { data: vars }] = await Promise.all([
       supabase
-        .from('sales').select('id,total,created_at')
+        .from('sales').select('id,total,tax,created_at')
         .eq('status', 'completed')
         .gte('created_at', earliest.toISOString())
         .lte('created_at', latest.toISOString())
@@ -55,6 +55,8 @@ export default function Reports() {
 
     const all = sales ?? []
     const sum = (arr) => arr.reduce((s, r) => s + Number(r.total), 0)
+    // ingreso sin IVA (el IVA no es utilidad, es dinero que se entrega al SAT)
+    const sumPreTax = (arr) => arr.reduce((s, r) => s + Number(r.total) - Number(r.tax || 0), 0)
     const today = all.filter((s) => new Date(s.created_at) >= startDay)
     const monthSales = all.filter((s) => new Date(s.created_at) >= startMonth)
 
@@ -84,7 +86,7 @@ export default function Reports() {
       todayCount: today.length,
       week: sum(all.filter((s) => new Date(s.created_at) >= start7)),
       month: sum(monthSales),
-      profitMonth: sum(monthSales) - costSum(monthSales),
+      profitMonth: sumPreTax(monthSales) - costSum(monthSales),
       inventoryValue,
     })
 
@@ -143,7 +145,7 @@ export default function Reports() {
         <Kpi label="Ventas hoy" value={money(kpi.today)} sub={`${kpi.todayCount} tickets`} accent />
         <Kpi label="Últimos 7 días" value={money(kpi.week)} />
         <Kpi label="Este mes" value={money(kpi.month)} />
-        <Kpi label="Utilidad del mes" value={money(kpi.profitMonth)} sub="ventas − costo" />
+        <Kpi label="Utilidad del mes" value={money(kpi.profitMonth)} sub="ventas sin IVA − costo" />
         <Kpi label="Valor de inventario" value={money(kpi.inventoryValue)} sub="stock × costo" />
         <Kpi label="Alertas de stock" value={low.length} sub="variantes bajas" warn={low.length > 0} />
       </div>
