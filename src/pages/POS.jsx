@@ -3,10 +3,11 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useBusiness } from '../context/BusinessContext'
 import { useToast, Modal, Spinner, Empty } from '../components/UI'
-import { money, folio, variantLabel, dateTime } from '../lib/format'
+import { money, folio, variantLabel, dateTime, qtyLabel, qtyStep, isFractionalUnit } from '../lib/format'
 import { IconSearch, IconCart, IconPlus, IconTrash, IconBox, IconCheck, IconPrint } from '../components/Icons'
 
 const IVA_RATE = 0.16   // fijo para todos los negocios; el cálculo real lo hace process_sale en el servidor
+const round3 = (n) => Math.round(n * 1000) / 1000
 
 export default function POS() {
   const { profile } = useAuth()
@@ -31,7 +32,7 @@ export default function POS() {
     setLoading(true)
     const { data, error } = await supabase
       .from('products')
-      .select('id,name,brand,price,image_url,active, category:categories(name), variants:product_variants(id,size,color,sku,price,stock,min_stock,active)')
+      .select('id,name,brand,price,unit,image_url,active, category:categories(name), variants:product_variants(id,size,color,sku,price,stock,min_stock,active)')
       .eq('active', true)
       .order('name')
     if (error) toast.err('No se pudo cargar el catálogo')
@@ -82,18 +83,20 @@ export default function POS() {
   /* ---------- carrito ---------- */
   function addVariant(product, variant) {
     if (variant.stock <= 0) { toast.err('Sin stock disponible'); return }
+    const step = qtyStep(product.unit)
     setCart((c) => {
       const found = c.find((i) => i.variant_id === variant.id)
       if (found) {
-        if (found.qty + 1 > variant.stock) { toast.err('No hay más stock'); return c }
-        return c.map((i) => i.variant_id === variant.id ? { ...i, qty: i.qty + 1 } : i)
+        if (found.qty + step > variant.stock) { toast.err('No hay más stock'); return c }
+        return c.map((i) => i.variant_id === variant.id ? { ...i, qty: round3(i.qty + step) } : i)
       }
       return [...c, {
         variant_id: variant.id,
         name: product.name,
         size: variant.size, color: variant.color,
         price: variant.price ?? product.price,
-        qty: 1, stock: variant.stock,
+        unit: product.unit,
+        qty: step, stock: variant.stock,
       }]
     })
   }
@@ -111,7 +114,8 @@ export default function POS() {
   const setQty = (variant_id, qty) =>
     setCart((c) => c.map((i) => {
       if (i.variant_id !== variant_id) return i
-      const q = Math.max(1, Math.min(qty, i.stock))
+      const min = isFractionalUnit(i.unit) ? 0.01 : 1
+      const q = round3(Math.max(min, Math.min(Number(qty) || min, i.stock)))
       return { ...i, qty: q }
     }))
 
@@ -190,7 +194,7 @@ export default function POS() {
                   <div className="flex items-center justify-between mt-2 px-1">
                     <span className="font-bold text-brand tnum">{money(p.price)}</span>
                     <span className={`text-[11px] font-semibold ${s <= 3 ? 'text-red-500' : 'text-slate-400'}`}>
-                      {s} pz
+                      {qtyLabel(s, p.unit)}
                     </span>
                   </div>
                 </button>
@@ -218,14 +222,19 @@ export default function POS() {
               <div key={i.variant_id} className="flex items-center gap-3 px-4 py-3">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-ink truncate">{i.name}</p>
-                  <p className="text-xs text-slate-400">{variantLabel(i.size, i.color)} · {money(i.price)}</p>
+                  <p className="text-xs text-slate-400">
+                    {variantLabel(i.size, i.color)} · {money(i.price)}
+                    {isFractionalUnit(i.unit) && <span className="text-slate-300">/{qtyLabel(1, i.unit).split(' ')[1]}</span>}
+                  </p>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <button onClick={() => setQty(i.variant_id, i.qty - 1)}
-                    className="h-7 w-7 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold text-slate-600">–</button>
-                  <span className="w-7 text-center text-sm font-bold tnum">{i.qty}</span>
-                  <button onClick={() => setQty(i.variant_id, i.qty + 1)}
-                    className="h-7 w-7 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold text-slate-600">+</button>
+                  <button onClick={() => setQty(i.variant_id, round3(i.qty - qtyStep(i.unit)))}
+                    className="h-7 w-7 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold text-slate-600 shrink-0">–</button>
+                  <input type="number" min="0" step={isFractionalUnit(i.unit) ? '0.01' : '1'}
+                    value={i.qty} onChange={(e) => setQty(i.variant_id, e.target.value)}
+                    className="w-14 text-center text-sm font-bold tnum input !py-1 !px-1" />
+                  <button onClick={() => setQty(i.variant_id, round3(i.qty + qtyStep(i.unit)))}
+                    className="h-7 w-7 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold text-slate-600 shrink-0">+</button>
                 </div>
                 <span className="w-16 text-right text-sm font-bold text-ink tnum">{money(i.price * i.qty)}</span>
                 <button onClick={() => removeItem(i.variant_id)} className="text-slate-300 hover:text-red-500">
@@ -309,7 +318,7 @@ function VariantPicker({ product, onClose, onPick }) {
         <img src={product.image_url} alt=""
           className="w-full h-44 object-cover rounded-xl mb-4 border border-slate-100" />
       )}
-      <p className="text-sm text-slate-500 mb-4">Elige talla y color.</p>
+      <p className="text-sm text-slate-500 mb-4">Elige una opción.</p>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
         {variants.map((v) => (
           <button key={v.id} disabled={v.stock <= 0} onClick={() => onPick(v)}
@@ -318,7 +327,7 @@ function VariantPicker({ product, onClose, onPick }) {
             <div className="flex justify-between items-center mt-1">
               <span className="text-sm text-brand font-bold tnum">{money(v.price ?? product.price)}</span>
               <span className={`text-xs font-semibold ${v.stock <= v.min_stock ? 'text-red-500' : 'text-slate-400'}`}>
-                {v.stock} pz
+                {qtyLabel(v.stock, product.unit)}
               </span>
             </div>
           </button>
@@ -429,35 +438,60 @@ function TicketModal({ ticket, onClose }) {
     const w = window.open('', '_blank', 'width=380,height=600')
     if (!w) return
     const rows = ticket.items.map((i) => `
-      <div class="row">
-        <span>${i.qty} × ${escapeHtml(i.name)}${i.size || i.color ? ` (${escapeHtml(variantLabel(i.size, i.color))})` : ''}</span>
-        <span>${money(i.price * i.qty)}</span>
+      <div class="item">
+        <div class="item-name">${escapeHtml(i.name)}${i.size || i.color ? ` <span class="muted">(${escapeHtml(variantLabel(i.size, i.color))})</span>` : ''}</div>
+        <div class="row">
+          <span class="muted">${qtyLabel(i.qty, i.unit)} × ${money(i.price)}</span>
+          <span class="line-total">${money(i.price * i.qty)}</span>
+        </div>
       </div>`).join('')
     w.document.write(`
       <html><head><title>${folio(ticket.folio)}</title>
       <style>
-        body { font-family: 'Courier New', monospace; font-size: 12px; width: 78mm; margin: 0 auto; padding: 10px; color: #111; }
-        h1 { font-size: 15px; text-align: center; margin: 0 0 2px; }
+        * { box-sizing: border-box; }
+        body { font-family: 'Courier New', monospace; font-size: 12px; width: 78mm; margin: 0 auto; padding: 14px 12px; color: #111; }
+        .brand { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-bottom: 4px; }
+        .brand img { max-height: 46px; max-width: 70%; object-fit: contain; }
+        h1 { font-size: 16px; letter-spacing: .03em; text-align: center; margin: 0; text-transform: uppercase; }
         .center { text-align: center; }
-        .muted { color: #555; font-size: 11px; }
-        hr { border: none; border-top: 1px dashed #999; margin: 8px 0; }
-        .row { display: flex; justify-content: space-between; gap: 8px; margin: 2px 0; }
-        .total { font-weight: bold; font-size: 14px; }
+        .muted { color: #666; font-size: 10.5px; }
+        hr { border: none; border-top: 1px dashed #999; margin: 10px 0; }
+        hr.strong { border-top: 2px solid #111; }
+        .row { display: flex; justify-content: space-between; gap: 8px; margin: 1px 0; }
+        .item { margin: 7px 0; }
+        .item-name { font-weight: bold; font-size: 12px; }
+        .line-total { font-weight: bold; }
+        .folio { display: inline-block; border: 1px solid #111; border-radius: 10px; padding: 2px 10px; font-weight: bold; font-size: 11px; letter-spacing: .04em; margin-top: 4px; }
+        .totals .row { font-size: 12px; color: #333; }
+        .grand { display: flex; justify-content: space-between; align-items: baseline; margin-top: 6px; padding-top: 6px; border-top: 2px solid #111; }
+        .grand .label { font-weight: bold; text-transform: uppercase; font-size: 12px; letter-spacing: .04em; }
+        .grand .value { font-weight: bold; font-size: 20px; }
+        .footer { text-align: center; margin-top: 14px; }
+        .footer .thanks { font-weight: bold; letter-spacing: .08em; text-transform: uppercase; font-size: 12px; }
+        .dots { letter-spacing: 3px; color: #999; text-align: center; margin: 10px 0; }
       </style></head>
       <body>
-        <h1>${escapeHtml(business.name || 'Tienda')}</h1>
-        <p class="center muted">${folio(ticket.folio)} · ${dateTime(new Date())}</p>
+        <div class="brand">
+          ${business.logo_url ? `<img src="${business.logo_url}" alt="" />` : ''}
+          <h1>${escapeHtml(business.name || 'Tienda')}</h1>
+        </div>
+        <p class="center muted">${dateTime(new Date())}</p>
+        <div class="center"><span class="folio">${folio(ticket.folio)}</span></div>
         <hr />
         ${rows}
         <hr />
-        <div class="row"><span>Subtotal</span><span>${money(ticket.subtotal)}</span></div>
-        ${ticket.discount > 0 ? `<div class="row"><span>Descuento</span><span>− ${money(ticket.discount)}</span></div>` : ''}
-        <div class="row"><span>IVA (16%)</span><span>${money(ticket.tax)}</span></div>
-        <div class="row total"><span>Total</span><span>${money(ticket.total)}</span></div>
-        <div class="row muted"><span>Pago</span><span>${ticket.method}</span></div>
+        <div class="totals">
+          <div class="row"><span>Subtotal</span><span>${money(ticket.subtotal)}</span></div>
+          ${ticket.discount > 0 ? `<div class="row"><span>Descuento</span><span>− ${money(ticket.discount)}</span></div>` : ''}
+          <div class="row"><span>IVA (16%)</span><span>${money(ticket.tax)}</span></div>
+        </div>
+        <div class="grand"><span class="label">Total</span><span class="value">${money(ticket.total)}</span></div>
+        <div class="row muted" style="margin-top:8px"><span>Forma de pago</span><span class="center" style="text-transform:capitalize">${ticket.method}</span></div>
         ${ticket.method === 'efectivo' && ticket.change > 0 ? `<div class="row muted"><span>Cambio</span><span>${money(ticket.change)}</span></div>` : ''}
-        <hr />
-        <p class="center muted">¡Gracias por su compra!</p>
+        <div class="dots">• • •</div>
+        <div class="footer">
+          <p class="thanks">¡Gracias por su compra!</p>
+        </div>
       </body></html>
     `)
     w.document.close()
@@ -467,17 +501,52 @@ function TicketModal({ ticket, onClose }) {
 
   return (
     <Modal open={!!ticket} onClose={onClose} title="Venta registrada">
-      <div className="text-center py-2">
-        <div className="mx-auto h-14 w-14 rounded-full bg-money/10 text-money grid place-items-center mb-3">
-          <IconCheck size={28} />
+      <div className="text-center pt-1 pb-3">
+        <div className="mx-auto h-12 w-12 rounded-full bg-money/10 text-money grid place-items-center mb-2">
+          <IconCheck size={24} />
         </div>
-        <p className="font-display font-extrabold text-2xl text-ink">{folio(ticket.folio)}</p>
-        <p className="text-slate-500 text-sm">Total cobrado</p>
-        <p className="font-display font-extrabold text-4xl text-ink tnum mt-1">{money(ticket.total)}</p>
+        <span className="pill bg-ink text-white">{folio(ticket.folio)}</span>
+      </div>
+
+      <div className="rounded-2xl border-2 border-dashed border-slate-200 p-4">
+        <div className="text-center mb-3">
+          {business.logo_url
+            ? <img src={business.logo_url} alt="" className="h-9 mx-auto object-contain mb-1" />
+            : <p className="font-display font-bold text-ink">{business.name || 'Tienda'}</p>}
+          <p className="text-xs text-slate-400">{dateTime(new Date())}</p>
+        </div>
+
+        <div className="divide-y divide-slate-100">
+          {ticket.items.map((i) => (
+            <div key={i.variant_id} className="py-2 text-sm">
+              <div className="flex justify-between gap-2">
+                <span className="font-semibold text-ink">{i.name}</span>
+                <span className="font-semibold text-ink tnum shrink-0">{money(i.price * i.qty)}</span>
+              </div>
+              <p className="text-xs text-slate-400">
+                {variantLabel(i.size, i.color)} · {qtyLabel(i.qty, i.unit)} × {money(i.price)}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-1 text-sm pt-3 mt-1 border-t border-dashed border-slate-200">
+          <div className="flex justify-between text-slate-500"><span>Subtotal</span><span className="tnum">{money(ticket.subtotal)}</span></div>
+          {ticket.discount > 0 && (
+            <div className="flex justify-between text-slate-500"><span>Descuento</span><span className="tnum">− {money(ticket.discount)}</span></div>
+          )}
+          <div className="flex justify-between text-slate-500"><span>IVA (16%)</span><span className="tnum">{money(ticket.tax)}</span></div>
+        </div>
+
+        <div className="flex justify-between items-baseline mt-2 pt-2 border-t-2 border-ink">
+          <span className="font-bold text-ink uppercase text-sm tracking-wide">Total</span>
+          <span className="font-display font-extrabold text-3xl text-ink tnum">{money(ticket.total)}</span>
+        </div>
         {ticket.method === 'efectivo' && ticket.change > 0 && (
-          <p className="text-money-dark font-semibold mt-2">Cambio: {money(ticket.change)}</p>
+          <p className="text-money-dark font-semibold text-sm text-right mt-1">Cambio: {money(ticket.change)}</p>
         )}
       </div>
+
       <div className="flex gap-2 mt-4">
         <button className="btn-ghost flex-1" onClick={printTicket}>
           <IconPrint size={16} /> Imprimir

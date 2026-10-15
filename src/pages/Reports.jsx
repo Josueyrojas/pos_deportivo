@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { Spinner, Empty } from '../components/UI'
-import { money, dateShort, variantLabel } from '../lib/format'
+import { money, dateShort, variantLabel, qtyLabel } from '../lib/format'
 import { IconChart, IconWarn } from '../components/Icons'
 
 const isoDaysAgo = (n) => {
@@ -44,7 +44,7 @@ export default function Reports() {
         .order('created_at'),
       supabase
         .from('product_variants')
-        .select('id,size,color,stock,min_stock, product:products(name,cost)')
+        .select('id,size,color,stock,min_stock, product:products(name,cost,unit)')
         .eq('active', true),
     ])
     const activeVars = vars ?? []
@@ -71,7 +71,7 @@ export default function Reports() {
         ? supabase.from('sale_items').select('sale_id,unit_cost,qty').in('sale_id', monthSales.map((s) => s.id))
         : Promise.resolve({ data: [] }),
       rangeSales.length
-        ? supabase.from('sale_items').select('product_name,size,color,qty,line_total').in('sale_id', rangeSales.map((s) => s.id))
+        ? supabase.from('sale_items').select('product_name,size,color,qty,unit,line_total').in('sale_id', rangeSales.map((s) => s.id))
         : Promise.resolve({ data: [] }),
     ])
 
@@ -105,8 +105,8 @@ export default function Reports() {
     const map = {}
     for (const it of topItemsRes.data ?? []) {
       const key = it.product_name
-      map[key] = map[key] || { name: key, qty: 0, total: 0 }
-      map[key].qty += it.qty
+      map[key] = map[key] || { name: key, qty: 0, total: 0, unit: it.unit }
+      map[key].qty += Number(it.qty)
       map[key].total += Number(it.line_total)
     }
     setTop(Object.values(map).sort((a, b) => b.qty - a.qty).slice(0, 6))
@@ -186,7 +186,7 @@ export default function Reports() {
                 <div key={i}>
                   <div className="flex justify-between text-sm mb-1">
                     <span className="font-semibold text-ink truncate">{t.name}</span>
-                    <span className="text-slate-400 tnum ml-2">{t.qty} pz</span>
+                    <span className="text-slate-400 tnum ml-2">{qtyLabel(t.qty, t.unit)}</span>
                   </div>
                   <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
                     <div className="h-full rounded-full bg-brand" style={{ width: `${(t.qty / maxTop) * 100}%` }} />
@@ -215,7 +215,7 @@ export default function Reports() {
                   <p className="text-sm font-semibold text-ink truncate">{v.product?.name}</p>
                   <p className="text-xs text-slate-400">{variantLabel(v.size, v.color)}</p>
                 </div>
-                <span className="pill bg-red-100 text-red-600 shrink-0">{v.stock} / min {v.min_stock}</span>
+                <span className="pill bg-red-100 text-red-600 shrink-0">{qtyLabel(v.stock, v.product?.unit)} / mín. {Number(v.min_stock)}</span>
               </div>
             ))}
           </div>

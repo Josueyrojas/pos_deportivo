@@ -57,6 +57,8 @@ create table if not exists public.products (
   brand       text default '',
   category_id uuid references public.categories(id) on delete set null,
   sku         text,
+  unit        text not null default 'pieza'
+    check (unit in ('pieza','metro','kg','litro','caja','rollo','par')),
   cost        numeric(12,2) not null default 0,
   price       numeric(12,2) not null default 0,   -- precio base de venta
   image_url   text,
@@ -66,8 +68,10 @@ create table if not exists public.products (
 create index if not exists idx_products_business on public.products (business_id);
 create index if not exists idx_products_name on public.products (lower(name));
 
--- Cada producto tiene 1..n variantes (talla/color). Un producto sin
--- variantes se guarda con una sola fila de talla/color en NULL.
+-- Cada producto tiene 1..n variantes (talla/color, o lo que aplique según
+-- el negocio). Un producto sin variantes se guarda con una sola fila con
+-- ambos campos en NULL. stock/min_stock admiten fracciones (ej. 3.5 metros
+-- de manguera) — la unidad real vive en products.unit.
 create table if not exists public.product_variants (
   id            uuid primary key default gen_random_uuid(),
   business_id   uuid not null references public.businesses(id),
@@ -76,8 +80,8 @@ create table if not exists public.product_variants (
   color         text,
   sku           text,
   price         numeric(12,2),        -- si es NULL, usa products.price
-  stock         integer not null default 0,
-  min_stock     integer not null default 0,
+  stock         numeric(12,3) not null default 0,
+  min_stock     numeric(12,3) not null default 0,
   active        boolean not null default true,
   created_at    timestamptz not null default now()
 );
@@ -141,7 +145,8 @@ create table if not exists public.sale_items (
   color        text,
   unit_price   numeric(12,2) not null,
   unit_cost    numeric(12,2) not null default 0,
-  qty          integer not null check (qty > 0),
+  unit         text not null default 'pieza',
+  qty          numeric(12,3) not null check (qty > 0),
   line_total   numeric(12,2) not null
 );
 create index if not exists idx_saleitems_business on public.sale_items (business_id);
@@ -254,7 +259,7 @@ declare
   v_change     numeric(12,2);
   v_item       jsonb;
   v_variant    record;
-  v_qty        integer;
+  v_qty        numeric(12,3);
   v_price      numeric(12,2);
 begin
   if v_uid is null then
@@ -279,7 +284,7 @@ begin
   -- Procesar cada renglón
   for v_item in select * from jsonb_array_elements(p_items)
   loop
-    v_qty := (v_item->>'qty')::int;
+    v_qty := (v_item->>'qty')::numeric;
     if v_qty is null or v_qty <= 0 then
       raise exception 'Cantidad inválida';
     end if;
@@ -287,7 +292,7 @@ begin
     -- Bloquear la variante para evitar sobreventa concurrente
     -- (y de paso confirmar que es del mismo negocio que quien vende)
     select pv.id, pv.stock, coalesce(pv.price, p.price) as price,
-           p.name as product_name, pv.size, pv.color, coalesce(p.cost, 0) as cost
+           p.name as product_name, pv.size, pv.color, coalesce(p.cost, 0) as cost, p.unit
       into v_variant
       from public.product_variants pv
       join public.products p on p.id = pv.product_id
@@ -306,10 +311,10 @@ begin
     v_price := v_variant.price;
 
     insert into public.sale_items
-      (sale_id, variant_id, product_name, size, color, unit_price, qty, line_total, unit_cost, business_id)
+      (sale_id, variant_id, product_name, size, color, unit_price, qty, line_total, unit_cost, unit, business_id)
     values
       (v_sale_id, v_variant.id, v_variant.product_name, v_variant.size,
-       v_variant.color, v_price, v_qty, v_price * v_qty, v_variant.cost, v_biz_id);
+       v_variant.color, v_price, v_qty, v_price * v_qty, v_variant.cost, v_variant.unit, v_biz_id);
 
     update public.product_variants
        set stock = stock - v_qty

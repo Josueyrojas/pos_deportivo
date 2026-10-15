@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast, Modal, Spinner, Empty } from '../components/UI'
-import { money, variantLabel } from '../lib/format'
+import { money, qtyLabel, isFractionalUnit, UNIT_OPTIONS } from '../lib/format'
 import { downloadCsv } from '../lib/csv'
 import { IconSearch, IconPlus, IconEdit, IconTrash, IconBox, IconWarn, IconDownload } from '../components/Icons'
 
@@ -20,7 +20,7 @@ export default function Inventory() {
     setLoading(true)
     const [{ data: prods }, { data: cats }] = await Promise.all([
       supabase.from('products')
-        .select('id,name,brand,price,cost,image_url,active,category_id, category:categories(name), variants:product_variants(id,size,color,sku,price,stock,min_stock,active)')
+        .select('id,name,brand,price,cost,unit,image_url,active,category_id, category:categories(name), variants:product_variants(id,size,color,sku,price,stock,min_stock,active)')
         .order('name'),
       supabase.from('categories').select('*').order('name'),
     ])
@@ -53,14 +53,14 @@ export default function Inventory() {
       for (const v of (p.variants || [])) {
         lines.push([
           p.name, p.brand || '', p.category?.name || '', v.sku || '',
-          v.size || '', v.color || '',
+          v.size || '', v.color || '', p.unit,
           Number(v.price ?? p.price).toFixed(2),
           v.stock, v.min_stock,
         ])
       }
     }
     downloadCsv('inventario.csv',
-      ['Producto', 'Marca', 'Categoría', 'SKU', 'Talla', 'Color', 'Precio', 'Stock', 'Mínimo'],
+      ['Producto', 'Marca', 'Categoría', 'SKU', 'Variante 1', 'Variante 2', 'Unidad', 'Precio', 'Stock', 'Mínimo'],
       lines)
   }
 
@@ -125,7 +125,7 @@ export default function Inventory() {
                   <td className="px-4 py-3 text-right font-semibold text-ink tnum">{money(p.price)}</td>
                   <td className="px-4 py-3 text-center text-slate-500">{(p.variants || []).length}</td>
                   <td className={`px-4 py-3 text-right font-semibold tnum ${stockOf(p) <= 5 ? 'text-red-500' : 'text-slate-700'}`}>
-                    {stockOf(p)}
+                    {qtyLabel(stockOf(p), p.unit)}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
@@ -177,6 +177,7 @@ function ProductEditor({ product, categories, onClose, onSaved }) {
       brand: product.brand || '',
       category_id: product.category_id || '',
       newCategory: '',
+      unit: product.unit || 'pieza',
       cost: product.cost ?? '',
       price: product.price ?? '',
       image_url: product.image_url || '',
@@ -228,7 +229,7 @@ function ProductEditor({ product, categories, onClose, onSaved }) {
 
     const payload = {
       name: form.name.trim(), brand: form.brand.trim(),
-      category_id: categoryId,
+      category_id: categoryId, unit: form.unit,
       cost: Number(form.cost) || 0, price: Number(form.price) || 0,
       image_url: form.image_url || null,
     }
@@ -318,31 +319,45 @@ function ProductEditor({ product, categories, onClose, onSaved }) {
           <label className="label">Precio de venta (base)</label>
           <input className="input tnum" type="number" min="0" value={form.price} onChange={(e) => set('price', e.target.value)} placeholder="0.00" />
         </div>
+        <div>
+          <label className="label">Se vende por</label>
+          <select className="input" value={form.unit} onChange={(e) => set('unit', e.target.value)}>
+            {UNIT_OPTIONS.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
+          </select>
+          <p className="text-xs text-slate-400 mt-1.5">
+            {isFractionalUnit(form.unit)
+              ? 'Admite fracciones, ej. 3.5.'
+              : 'Solo cantidades enteras.'}
+          </p>
+        </div>
       </div>
 
       <div className="mt-6">
         <div className="flex items-center justify-between mb-2">
-          <label className="label !mb-0">Variantes (talla / color / stock)</label>
+          <label className="label !mb-0">Variantes (ej. talla/color, o medida/presentación)</label>
           <button className="btn-ghost !py-1.5 !px-3 text-xs" onClick={() => setVariants((v) => [...v, emptyVariant()])}>
             <IconPlus size={14} /> Agregar
           </button>
         </div>
         <p className="text-xs text-slate-400 mb-3">
-          Si el producto no maneja tallas ni colores, deja esos campos vacíos (variante única).
+          Si el producto no tiene variantes, deja esos dos campos vacíos (variante única).
         </p>
 
         <div className="space-y-2">
           <div className="hidden sm:grid grid-cols-[1fr_1fr_1.2fr_1fr_1fr_1fr_auto] gap-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-            <span>Talla</span><span>Color</span><span>SKU / código</span><span>Precio*</span><span>Stock</span><span>Mín.</span><span></span>
+            <span>Variante 1</span><span>Variante 2</span><span>SKU / código</span><span>Precio*</span>
+            <span>Stock</span><span>Mín.</span><span></span>
           </div>
           {variants.map((v) => (
             <div key={v._k} className="grid grid-cols-2 sm:grid-cols-[1fr_1fr_1.2fr_1fr_1fr_1fr_auto] gap-2">
-              <input className="input !py-2" value={v.size} onChange={(e) => setV(v._k, 'size', e.target.value)} placeholder="Talla" />
-              <input className="input !py-2" value={v.color} onChange={(e) => setV(v._k, 'color', e.target.value)} placeholder="Color" />
+              <input className="input !py-2" value={v.size} onChange={(e) => setV(v._k, 'size', e.target.value)} placeholder="Ej. Talla, medida…" />
+              <input className="input !py-2" value={v.color} onChange={(e) => setV(v._k, 'color', e.target.value)} placeholder="Ej. Color, presentación…" />
               <input className="input !py-2" value={v.sku} onChange={(e) => setV(v._k, 'sku', e.target.value)} placeholder="Escanea o escribe" />
               <input className="input !py-2 tnum" type="number" value={v.price} onChange={(e) => setV(v._k, 'price', e.target.value)} placeholder="Base" />
-              <input className="input !py-2 tnum" type="number" value={v.stock} onChange={(e) => setV(v._k, 'stock', e.target.value)} placeholder="0" />
-              <input className="input !py-2 tnum" type="number" value={v.min_stock} onChange={(e) => setV(v._k, 'min_stock', e.target.value)} placeholder="0" />
+              <input className="input !py-2 tnum" type="number" step={isFractionalUnit(form.unit) ? '0.01' : '1'}
+                value={v.stock} onChange={(e) => setV(v._k, 'stock', e.target.value)} placeholder="0" />
+              <input className="input !py-2 tnum" type="number" step={isFractionalUnit(form.unit) ? '0.01' : '1'}
+                value={v.min_stock} onChange={(e) => setV(v._k, 'min_stock', e.target.value)} placeholder="0" />
               <button onClick={() => setVariants((vs) => vs.filter((x) => x._k !== v._k))}
                 className="grid place-items-center text-slate-300 hover:text-red-500">
                 <IconTrash size={16} />

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useToast, Modal, Spinner, Empty } from '../components/UI'
-import { money, folio, dateTime, variantLabel } from '../lib/format'
+import { money, folio, dateTime, variantLabel, qtyLabel } from '../lib/format'
 import { downloadCsv } from '../lib/csv'
 import { IconReceipt, IconUndo, IconDownload } from '../components/Icons'
 
@@ -185,7 +185,7 @@ export default function Sales() {
                   <div>
                     <p className="font-semibold text-ink">{it.product_name}</p>
                     <p className="text-xs text-slate-400">
-                      {variantLabel(it.size, it.color)} · {it.qty} × {money(it.unit_price)}
+                      {variantLabel(it.size, it.color)} · {qtyLabel(it.qty, it.unit)} × {money(it.unit_price)}
                     </p>
                   </div>
                   <span className="font-semibold text-ink tnum">{money(it.line_total)}</span>
