@@ -11,6 +11,9 @@ export default function Settings() {
   const toast = useToast()
   const [name, setName] = useState('')
   const [logoUrl, setLogoUrl] = useState('')
+  const [address, setAddress] = useState('')
+  const [phone, setPhone] = useState('')
+  const [rfc, setRfc] = useState('')
   const [busy, setBusy] = useState(false)
   const [imgBusy, setImgBusy] = useState(false)
 
@@ -18,8 +21,11 @@ export default function Settings() {
     if (!business.loading) {
       setName(business.name || '')
       setLogoUrl(business.logo_url || '')
+      setAddress(business.address || '')
+      setPhone(business.phone || '')
+      setRfc(business.rfc || '')
     }
-  }, [business.loading, business.name, business.logo_url])
+  }, [business.loading, business.name, business.logo_url, business.address, business.phone, business.rfc])
 
   async function uploadLogo(e) {
     const file = e.target.files?.[0]
@@ -40,7 +46,10 @@ export default function Settings() {
     if (!name.trim()) { toast.err('Ponle un nombre a la tienda'); return }
     setBusy(true)
     const { error } = await supabase.from('businesses')
-      .update({ name: name.trim(), logo_url: logoUrl || null })
+      .update({
+        name: name.trim(), logo_url: logoUrl || null,
+        address: address.trim(), phone: phone.trim(), rfc: rfc.trim(),
+      })
       .eq('id', profile.business_id)
     setBusy(false)
     if (error) { toast.err('No se pudo guardar'); return }
@@ -86,6 +95,27 @@ export default function Settings() {
               )}
             </div>
             <p className="text-xs text-slate-400 mt-1.5">JPG o PNG, hasta 3 MB. Se ve en el login y el menú.</p>
+          </div>
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-4 mt-6 pt-6 border-t border-slate-100">
+          <div className="sm:col-span-2">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">
+              Datos fiscales (para la nota de remisión)
+            </p>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="label">Dirección</label>
+            <input className="input" value={address} onChange={(e) => setAddress(e.target.value)}
+              placeholder="Calle, número, colonia, ciudad" />
+          </div>
+          <div>
+            <label className="label">Teléfono</label>
+            <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Opcional" />
+          </div>
+          <div>
+            <label className="label">RFC</label>
+            <input className="input" value={rfc} onChange={(e) => setRfc(e.target.value.toUpperCase())} placeholder="Opcional" />
           </div>
         </div>
 

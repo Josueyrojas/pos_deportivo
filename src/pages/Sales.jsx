@@ -179,6 +179,9 @@ export default function Sales() {
                 <span className="pill bg-red-50 text-red-500">Cancelada</span>
               )}
             </div>
+            {detail.sale.customer_name && (
+              <p className="text-sm text-slate-500 mt-1">Cliente: <b className="text-ink">{detail.sale.customer_name}</b></p>
+            )}
             <div className="divide-y divide-slate-100 my-4">
               {detail.items.map((it) => (
                 <div key={it.id} className="flex justify-between py-2.5 text-sm">

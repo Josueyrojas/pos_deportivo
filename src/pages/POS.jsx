@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useBusiness } from '../context/BusinessContext'
 import { useToast, Modal, Spinner, Empty } from '../components/UI'
-import { money, folio, variantLabel, dateTime, qtyLabel, qtyStep, isFractionalUnit } from '../lib/format'
+import { money, folio, variantLabel, dateTime, qtyLabel, qtyStep, isFractionalUnit, unitAbbr } from '../lib/format'
 import { IconSearch, IconCart, IconPlus, IconTrash, IconBox, IconCheck, IconPrint } from '../components/Icons'
 
 const IVA_RATE = 0.16   // fijo para todos los negocios; el cálculo real lo hace process_sale en el servidor
@@ -342,9 +342,10 @@ function PaymentModal({ open, onClose, total, subtotal, tax, cart, discount, ses
   const toast = useToast()
   const [method, setMethod] = useState('efectivo')
   const [received, setReceived] = useState('')
+  const [customerName, setCustomerName] = useState('')
   const [busy, setBusy] = useState(false)
 
-  useEffect(() => { if (open) { setMethod('efectivo'); setReceived('') } }, [open])
+  useEffect(() => { if (open) { setMethod('efectivo'); setReceived(''); setCustomerName('') } }, [open])
 
   const change = method === 'efectivo' ? Math.max((Number(received) || 0) - total, 0) : 0
   const insufficient = method === 'efectivo' && received !== '' && Number(received) < total
@@ -358,6 +359,7 @@ function PaymentModal({ open, onClose, total, subtotal, tax, cart, discount, ses
       p_discount: discount,
       p_cash_received: method === 'efectivo' ? (Number(received) || total) : null,
       p_session_id: sessionId,
+      p_customer_name: customerName.trim(),
     })
     setBusy(false)
     if (error) { toast.err(error.message || 'No se pudo registrar la venta'); return }
@@ -390,6 +392,10 @@ function PaymentModal({ open, onClose, total, subtotal, tax, cart, discount, ses
         <span className="text-slate-500">Total a pagar</span>
         <span className="font-display font-extrabold text-3xl text-ink tnum">{money(total)}</span>
       </div>
+
+      <label className="label">Cliente (opcional)</label>
+      <input className="input mb-4" value={customerName} onChange={(e) => setCustomerName(e.target.value)}
+        placeholder="Para la nota de remisión" />
 
       <label className="label">Método de pago</label>
       <div className="grid grid-cols-3 gap-2 mb-4">
@@ -499,6 +505,98 @@ function TicketModal({ ticket, onClose }) {
     w.print()
   }
 
+  function printRemision() {
+    const w = window.open('', '_blank', 'width=850,height=1000')
+    if (!w) return
+    const rows = ticket.items.map((i) => `
+      <tr>
+        <td class="num">${qtyLabel(i.qty, i.unit).split(' ')[0]}</td>
+        <td class="center">${unitAbbr(i.unit)}</td>
+        <td>${escapeHtml(i.name)}${i.size || i.color ? ` <span class="muted">(${escapeHtml(variantLabel(i.size, i.color))})</span>` : ''}</td>
+        <td class="num">${money(i.price)}</td>
+        <td class="num">${money(i.price * i.qty)}</td>
+      </tr>`).join('')
+    w.document.write(`
+      <html><head><title>Nota de remisión ${folio(ticket.folio)}</title>
+      <style>
+        @page { size: letter; margin: 16mm; }
+        * { box-sizing: border-box; }
+        body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #1a1a1a; }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border-bottom: 3px solid #111; padding-bottom: 12px; margin-bottom: 14px; }
+        .header img { max-height: 60px; max-width: 220px; object-fit: contain; }
+        .biz-name { font-size: 18px; font-weight: bold; margin: 0 0 2px; }
+        .biz-meta { font-size: 11px; color: #555; line-height: 1.5; }
+        .doc-title { text-align: right; }
+        .doc-title h1 { font-size: 20px; letter-spacing: .04em; margin: 0 0 6px; text-transform: uppercase; }
+        .folio-box { display: inline-block; border: 2px solid #111; border-radius: 8px; padding: 4px 14px; font-weight: bold; font-size: 13px; }
+        .meta-row { display: flex; justify-content: space-between; gap: 24px; margin-bottom: 14px; font-size: 12px; }
+        .meta-row .field { flex: 1; }
+        .meta-row .label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: #888; display: block; margin-bottom: 1px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+        th { background: #111; color: #fff; text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .03em; padding: 7px 8px; }
+        td { padding: 7px 8px; border-bottom: 1px solid #e5e5e5; font-size: 12px; vertical-align: top; }
+        .num { text-align: right; white-space: nowrap; }
+        .center { text-align: center; }
+        .muted { color: #777; font-size: 10.5px; }
+        .totals { margin-left: auto; width: 260px; }
+        .totals .row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 12.5px; }
+        .totals .grand { display: flex; justify-content: space-between; border-top: 2px solid #111; margin-top: 4px; padding-top: 6px; font-weight: bold; font-size: 16px; }
+        .signatures { display: flex; gap: 40px; margin-top: 60px; }
+        .sig { flex: 1; text-align: center; }
+        .sig .line { border-top: 1px solid #333; margin-bottom: 4px; }
+        .sig .label { font-size: 11px; color: #555; }
+        .disclaimer { margin-top: 28px; font-size: 10px; color: #999; text-align: center; font-style: italic; }
+      </style></head>
+      <body>
+        <div class="header">
+          <div style="display:flex; gap:14px; align-items:center;">
+            ${business.logo_url ? `<img src="${business.logo_url}" alt="" />` : ''}
+            <div>
+              <p class="biz-name">${escapeHtml(business.name || 'Negocio')}</p>
+              <div class="biz-meta">
+                ${business.address ? `${escapeHtml(business.address)}<br/>` : ''}
+                ${business.phone ? `Tel. ${escapeHtml(business.phone)}` : ''}${business.phone && business.rfc ? ' · ' : ''}${business.rfc ? `RFC ${escapeHtml(business.rfc)}` : ''}
+              </div>
+            </div>
+          </div>
+          <div class="doc-title">
+            <h1>Nota de remisión</h1>
+            <span class="folio-box">${folio(ticket.folio)}</span>
+          </div>
+        </div>
+
+        <div class="meta-row">
+          <div class="field"><span class="label">Cliente</span>${escapeHtml(ticket.customer_name) || '—'}</div>
+          <div class="field"><span class="label">Fecha</span>${dateTime(new Date())}</div>
+          <div class="field"><span class="label">Forma de pago</span><span style="text-transform:capitalize">${ticket.method}</span></div>
+        </div>
+
+        <table>
+          <thead><tr><th>Cant.</th><th>Unidad</th><th>Descripción</th><th class="num">P. unitario</th><th class="num">Importe</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+
+        <div class="totals">
+          <div class="row"><span>Subtotal</span><span>${money(ticket.subtotal)}</span></div>
+          ${ticket.discount > 0 ? `<div class="row"><span>Descuento</span><span>− ${money(ticket.discount)}</span></div>` : ''}
+          <div class="row"><span>IVA (16%)</span><span>${money(ticket.tax)}</span></div>
+          <div class="grand"><span>Total</span><span>${money(ticket.total)}</span></div>
+          ${ticket.method === 'efectivo' && ticket.change > 0 ? `<div class="row"><span>Cambio</span><span>${money(ticket.change)}</span></div>` : ''}
+        </div>
+
+        <div class="signatures">
+          <div class="sig"><div class="line"></div><span class="label">Entregó</span></div>
+          <div class="sig"><div class="line"></div><span class="label">Recibí de conformidad</span></div>
+        </div>
+
+        <p class="disclaimer">Documento sin validez fiscal. No sustituye una factura (CFDI).</p>
+      </body></html>
+    `)
+    w.document.close()
+    w.focus()
+    w.print()
+  }
+
   return (
     <Modal open={!!ticket} onClose={onClose} title="Venta registrada">
       <div className="text-center pt-1 pb-3">
@@ -514,6 +612,9 @@ function TicketModal({ ticket, onClose }) {
             ? <img src={business.logo_url} alt="" className="h-9 mx-auto object-contain mb-1" />
             : <p className="font-display font-bold text-ink">{business.name || 'Tienda'}</p>}
           <p className="text-xs text-slate-400">{dateTime(new Date())}</p>
+          {ticket.customer_name && (
+            <p className="text-xs text-slate-500 mt-1">Cliente: <b>{ticket.customer_name}</b></p>
+          )}
         </div>
 
         <div className="divide-y divide-slate-100">
@@ -549,10 +650,13 @@ function TicketModal({ ticket, onClose }) {
 
       <div className="flex gap-2 mt-4">
         <button className="btn-ghost flex-1" onClick={printTicket}>
-          <IconPrint size={16} /> Imprimir
+          <IconPrint size={16} /> Ticket
         </button>
-        <button className="btn-brand flex-1" onClick={onClose}>Nueva venta</button>
+        <button className="btn-ghost flex-1" onClick={printRemision}>
+          <IconPrint size={16} /> Nota de remisión
+        </button>
       </div>
+      <button className="btn-brand w-full mt-2" onClick={onClose}>Nueva venta</button>
     </Modal>
   )
 }

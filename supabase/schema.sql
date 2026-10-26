@@ -16,6 +16,9 @@ create table if not exists public.businesses (
   id         uuid primary key default gen_random_uuid(),
   name       text not null default 'Mi Negocio',
   logo_url   text,
+  address    text not null default '',
+  phone      text not null default '',
+  rfc        text not null default '',
   active     boolean not null default true,
   created_at timestamptz not null default now()
 );
@@ -127,6 +130,7 @@ create table if not exists public.sales (
   cancelled_at   timestamptz,
   cancelled_by   uuid references public.profiles(id),
   cancel_reason  text not null default '',
+  customer_name  text not null default '',
   created_at     timestamptz not null default now()
 );
 create index if not exists idx_sales_business on public.sales (business_id);
@@ -241,7 +245,8 @@ create or replace function public.process_sale(
   p_payment_method text,
   p_discount       numeric default 0,
   p_cash_received  numeric default null,
-  p_session_id     uuid    default null
+  p_session_id     uuid    default null,
+  p_customer_name  text    default ''
 )
 returns jsonb
 language plpgsql security definer set search_path = public
@@ -277,8 +282,8 @@ begin
   end if;
 
   -- Crear encabezado de venta (subtotal/total se actualizan al final)
-  insert into public.sales (session_id, cashier_id, payment_method, business_id)
-  values (p_session_id, v_uid, p_payment_method, v_biz_id)
+  insert into public.sales (session_id, cashier_id, payment_method, business_id, customer_name)
+  values (p_session_id, v_uid, p_payment_method, v_biz_id, coalesce(p_customer_name, ''))
   returning id, folio into v_sale_id, v_folio;
 
   -- Procesar cada renglón
@@ -347,7 +352,8 @@ begin
     'discount',coalesce(p_discount,0),
     'tax',     v_tax,
     'total',   v_total,
-    'change',  v_change
+    'change',  v_change,
+    'customer_name', coalesce(p_customer_name, '')
   );
 end;
 $$;
