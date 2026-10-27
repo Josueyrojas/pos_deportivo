@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { useBusiness } from '../context/BusinessContext'
 import { useToast, Modal, Spinner, Empty } from '../components/UI'
 import { money, folio, dateTime, variantLabel, qtyLabel } from '../lib/format'
 import { downloadCsv } from '../lib/csv'
-import { IconReceipt, IconUndo, IconDownload } from '../components/Icons'
+import { printTicket, printRemision } from '../lib/receipts'
+import { IconReceipt, IconUndo, IconDownload, IconPrint } from '../components/Icons'
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
 
 export default function Sales() {
   const { isAdmin, profile } = useAuth()
+  const business = useBusiness()
   const toast = useToast()
   const [rows, setRows] = useState([])
   const [names, setNames] = useState({})
@@ -66,6 +69,20 @@ export default function Sales() {
 
   const canCancel = (sale) =>
     sale && sale.status !== 'cancelled' && (isAdmin || sale.cashier_id === profile?.id)
+
+  // arma el objeto que esperan printTicket/printRemision a partir de una venta ya guardada
+  function toReceipt({ sale, items }) {
+    return {
+      folio: sale.folio,
+      created_at: sale.created_at,
+      items: items.map((it) => ({
+        name: it.product_name, size: it.size, color: it.color,
+        qty: it.qty, unit: it.unit, price: it.unit_price,
+      })),
+      subtotal: sale.subtotal, discount: sale.discount, tax: sale.tax, total: sale.total,
+      method: sale.payment_method, change: sale.change, customer_name: sale.customer_name,
+    }
+  }
 
   function exportCsv() {
     downloadCsv(
@@ -211,6 +228,15 @@ export default function Sales() {
               {detail.sale.status === 'cancelled' && detail.sale.cancel_reason && (
                 <div className="text-xs text-slate-400 pt-1">Motivo: {detail.sale.cancel_reason}</div>
               )}
+            </div>
+
+            <div className="flex gap-2 mt-5">
+              <button className="btn-ghost flex-1" onClick={() => printTicket(toReceipt(detail), business)}>
+                <IconPrint size={16} /> Ticket
+              </button>
+              <button className="btn-ghost flex-1" onClick={() => printRemision(toReceipt(detail), business)}>
+                <IconPrint size={16} /> Nota de remisión
+              </button>
             </div>
 
             {canCancel(detail.sale) && (
