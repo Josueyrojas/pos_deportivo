@@ -14,6 +14,8 @@ export default function Settings() {
   const [address, setAddress] = useState('')
   const [phone, setPhone] = useState('')
   const [rfc, setRfc] = useState('')
+  const [remisionFooter, setRemisionFooter] = useState('')
+  const [remisionSignatures, setRemisionSignatures] = useState(true)
   const [busy, setBusy] = useState(false)
   const [imgBusy, setImgBusy] = useState(false)
 
@@ -24,8 +26,11 @@ export default function Settings() {
       setAddress(business.address || '')
       setPhone(business.phone || '')
       setRfc(business.rfc || '')
+      setRemisionFooter(business.remision_footer || '')
+      setRemisionSignatures(business.remision_show_signatures !== false)
     }
-  }, [business.loading, business.name, business.logo_url, business.address, business.phone, business.rfc])
+  }, [business.loading, business.name, business.logo_url, business.address, business.phone, business.rfc,
+      business.remision_footer, business.remision_show_signatures])
 
   async function uploadLogo(e) {
     const file = e.target.files?.[0]
@@ -49,6 +54,8 @@ export default function Settings() {
       .update({
         name: name.trim(), logo_url: logoUrl || null,
         address: address.trim(), phone: phone.trim(), rfc: rfc.trim(),
+        remision_footer: remisionFooter.trim(),
+        remision_show_signatures: remisionSignatures,
       })
       .eq('id', profile.business_id)
     setBusy(false)
@@ -117,6 +124,26 @@ export default function Settings() {
             <label className="label">RFC</label>
             <input className="input" value={rfc} onChange={(e) => setRfc(e.target.value.toUpperCase())} placeholder="Opcional" />
           </div>
+        </div>
+
+        <div className="mt-6 pt-6 border-t border-slate-100">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
+            Nota de remisión
+          </p>
+
+          <label className="label">Nota al pie (opcional)</label>
+          <textarea className="input" rows={2} value={remisionFooter}
+            onChange={(e) => setRemisionFooter(e.target.value)}
+            placeholder="Ej. Política de cambios, garantía, horario de atención…" />
+          <p className="text-xs text-slate-400 mt-1.5">
+            Se agrega debajo del aviso de que no es un comprobante fiscal.
+          </p>
+
+          <label className="flex items-center gap-2 mt-4 cursor-pointer select-none">
+            <input type="checkbox" className="h-4 w-4 accent-brand" checked={remisionSignatures}
+              onChange={(e) => setRemisionSignatures(e.target.checked)} />
+            <span className="text-sm text-slate-600">Mostrar líneas de firma ("Entregó" / "Recibí de conformidad")</span>
+          </label>
         </div>
 
         <button className="btn-brand w-full mt-6" onClick={save} disabled={busy}>

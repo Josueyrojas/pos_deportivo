@@ -584,12 +584,14 @@ function TicketModal({ ticket, onClose }) {
           ${ticket.method === 'efectivo' && ticket.change > 0 ? `<div class="row"><span>Cambio</span><span>${money(ticket.change)}</span></div>` : ''}
         </div>
 
+        ${business.remision_show_signatures !== false ? `
         <div class="signatures">
           <div class="sig"><div class="line"></div><span class="label">Entregó</span></div>
           <div class="sig"><div class="line"></div><span class="label">Recibí de conformidad</span></div>
-        </div>
+        </div>` : ''}
 
         <p class="disclaimer">Documento sin validez fiscal. No sustituye una factura (CFDI).</p>
+        ${business.remision_footer ? `<p class="disclaimer" style="font-style:normal; color:#555;">${escapeHtml(business.remision_footer)}</p>` : ''}
       </body></html>
     `)
     w.document.close()

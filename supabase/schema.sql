@@ -19,6 +19,8 @@ create table if not exists public.businesses (
   address    text not null default '',
   phone      text not null default '',
   rfc        text not null default '',
+  remision_footer          text not null default '',
+  remision_show_signatures boolean not null default true,
   active     boolean not null default true,
   created_at timestamptz not null default now()
 );
